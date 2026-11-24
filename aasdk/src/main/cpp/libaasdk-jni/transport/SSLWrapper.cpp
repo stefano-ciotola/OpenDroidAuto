@@ -176,8 +176,16 @@ int SSLWrapper::sslWrite(SSL *ssl, const void *buf, int num)
 
 int SSLWrapper::getError(SSL* ssl, int returnCode)
 {
-    Log_e("error: %s", ERR_error_string(ERR_get_error(), nullptr));
-    return SSL_get_error(ssl, returnCode);
+    // Call SSL_get_error before draining ERR_get_error(), otherwise popping the
+    // OpenSSL error queue causes SSL_get_error to fall back to SSL_ERROR_SYSCALL (5).
+    int sslError = SSL_get_error(ssl, returnCode);
+    if (sslError != SSL_ERROR_NONE && sslError != SSL_ERROR_WANT_READ && sslError != SSL_ERROR_WANT_WRITE) {
+        unsigned long err;
+        while ((err = ERR_get_error()) != 0) {
+            Log_e("error: %s (sslError=%d)", ERR_error_string(err, nullptr), sslError);
+        }
+    }
+    return sslError;
 }
 
 }

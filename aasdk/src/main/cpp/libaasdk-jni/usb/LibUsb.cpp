@@ -2,6 +2,7 @@
 #include <JNIBase.h>
 #include <Log.h>
 #include <jni.h>
+#include <sys/prctl.h>
 
 namespace aasdk {
 namespace usb {
@@ -26,6 +27,7 @@ void LibUsb::initWorker(){
         // Attach jni thread
         JNIEnv* env;
         JNIBase::javaAttachThread("LibUsb Worker", &env);
+        prctl(PR_SET_NAME, "ODA-LibUsb", 0, 0, 0);
 
         timeval libusbEventTimeout{1, 0};
         int completed = 0;

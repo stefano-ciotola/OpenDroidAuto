@@ -7,6 +7,7 @@ ANDROID_LIB := $(EXT_LIB)/$(TARGET_ARCH_ABI)/system/hrv
 
 LOCAL_MODULE    := libomxvideocodec-jni
 LOCAL_SRC_FILES := OMXVideoCodec.cpp \
+                   VideoStats.cpp \
                    OMXDecoder.cpp \
                    OMXSource.cpp \
                    it_smg_libs_videocodec_OMXVideoCodec.cpp

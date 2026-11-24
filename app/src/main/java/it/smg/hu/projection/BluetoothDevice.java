@@ -31,19 +31,28 @@ public class BluetoothDevice extends it.smg.libs.aasdk.projection.BluetoothDevic
     public boolean isPaired(String address) {
         if (Log.isDebug()) Log.d(TAG, "isPaired phoneAddress: " + address);
 
+        if (!isAvailable()) {
+            return false;
+        }
+
         if (address != null && !address.trim().isEmpty()) {
-            Set<android.bluetooth.BluetoothDevice> pairedDevices = bluetoothAdapter_.getBondedDevices();
-            // If there are paired devices
-            if (!pairedDevices.isEmpty()) {
-                // Loop through paired devices
-                for (android.bluetooth.BluetoothDevice device : pairedDevices) {
-                    // Add the name and address to an array adapter to show in a ListView
-                    if (Log.isDebug()) Log.d(TAG, "check paired device " + device.getName() + ": " + device.getAddress());
-                    if (address.equalsIgnoreCase(device.getAddress())) {
-                        if (Log.isDebug()) Log.d(TAG, "found device " + device.getName());
-                        return true;
+            try {
+                Set<android.bluetooth.BluetoothDevice> pairedDevices = bluetoothAdapter_.getBondedDevices();
+                // If there are paired devices
+                if (pairedDevices != null && !pairedDevices.isEmpty()) {
+                    // Loop through paired devices
+                    for (android.bluetooth.BluetoothDevice device : pairedDevices) {
+                        // Add the name and address to an array adapter to show in a ListView
+                        if (Log.isDebug()) Log.d(TAG, "check paired device " + device.getName() + ": " + device.getAddress());
+                        if (address.equalsIgnoreCase(device.getAddress())) {
+                            if (Log.isDebug()) Log.d(TAG, "found device " + device.getName());
+                            return true;
+                        }
                     }
                 }
+            } catch (Throwable t) {
+                Log.w(TAG, "Failed to query bonded Bluetooth devices: " + t.getMessage());
+                return false;
             }
         }
 
@@ -62,13 +71,18 @@ public class BluetoothDevice extends it.smg.libs.aasdk.projection.BluetoothDevic
     @Override
     public String getLocalAddress() {
         String macAddress = "";
-        if (isAvailable()){
-            if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.JELLY_BEAN) {
-                macAddress = bluetoothAdapter_.getAddress();
-                if (macAddress == null){
-                    macAddress = "";
+        try {
+            if (isAvailable()){
+                if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.JELLY_BEAN) {
+                    macAddress = bluetoothAdapter_.getAddress();
+                    if (macAddress == null){
+                        macAddress = "";
+                    }
                 }
             }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to read local Bluetooth address: " + t.getMessage());
+            macAddress = "";
         }
         if (Log.isDebug()) Log.d(TAG, "localAddress: " + macAddress);
         return macAddress;
@@ -82,12 +96,17 @@ public class BluetoothDevice extends it.smg.libs.aasdk.projection.BluetoothDevic
         if (bluetoothAdapter_ == null) {
             if (Log.isWarn()) Log.w(TAG, "Device not available");
             return false;
-        } else if (!bluetoothAdapter_.isEnabled()) {
-            if (Log.isWarn()) Log.w(TAG, "Device not enabled");
-            return false;
-        } else {
+        }
+        try {
+            if (!bluetoothAdapter_.isEnabled()) {
+                if (Log.isWarn()) Log.w(TAG, "Device not enabled");
+                return false;
+            }
             if (Log.isDebug()) Log.d(TAG, "Device enabled");
             return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to query Bluetooth adapter state: " + t.getMessage());
+            return false;
         }
     }
 

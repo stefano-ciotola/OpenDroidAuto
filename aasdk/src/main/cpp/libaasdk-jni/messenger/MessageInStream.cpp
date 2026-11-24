@@ -56,36 +56,28 @@ void MessageInStream::receiveFrameHeaderHandler(const common::DataConstBuffer& b
     if (Log::isVerbose()) Log_v("%s / receiveFrameHeaderHandler: %s", channelIdToString(frameHeader.getChannelId()).c_str(), frameHeader.toString().c_str());
     if (Log::isVerbose() && Log::logProtocol()) Log_v("%s/receiveFrameHeaderHandler %s", channelIdToString(frameHeader.getChannelId()).c_str(), common::dump(buffer).c_str());
 
-    if(message_ != nullptr && message_->getChannelId() != frameHeader.getChannelId())
-    {
-        if (Log::isDebug()) Log_d("%s / message already present, add it to buffer", channelIdToString(message_->getChannelId()).c_str());
-        messageBuffer_[message_->getChannelId()] = message_;
+    if (message_ != nullptr) {
+        if (Log::isDebug()) Log_d("%s / residual message present, buffering it", channelIdToString(message_->getChannelId()).c_str());
+        messageBuffer_[message_->getChannelId()] = std::move(message_);
         message_ = nullptr;
     }
 
-    auto bufferedMessage = messageBuffer_.find(frameHeader.getChannelId());
-
-    if(bufferedMessage != messageBuffer_.end())
-    {
-        if(frameHeader.getType() != FrameType::FIRST && frameHeader.getType() != FrameType::BULK)
-        {
-            if (Log::isVerbose()) Log_v("%s / frameType is not FIRST and BULK", channelIdToString(frameHeader.getChannelId()).c_str());
-            message_ = bufferedMessage->second;
-        }
-        else
-        {
-            if (Log::isVerbose()) Log_v("%s / frameType is FIRST or BULK, remove previous message in buffer and put new one", channelIdToString(frameHeader.getChannelId()).c_str());
-//            messageBuffer_.erase(bufferedMessage);
-            message_ = std::make_shared<Message>(frameHeader.getChannelId(), frameHeader.getEncryptionType(), frameHeader.getMessageType());
-//            messageBuffer_[frameHeader.getChannelId()] = message_;
-        }
-        messageBuffer_.erase(bufferedMessage);
-    }
-    else if(message_ == nullptr)
-    {
-        if (Log::isVerbose()) Log_v("%s / add new message in bufferedMessage", channelIdToString(frameHeader.getChannelId()).c_str());
+    if (frameHeader.getType() == FrameType::BULK) {
+        // Keep any in-flight fragmented message on the same channel buffered while
+        // handling an interleaved BULK frame.
         message_ = std::make_shared<Message>(frameHeader.getChannelId(), frameHeader.getEncryptionType(), frameHeader.getMessageType());
-//        messageBuffer_[frameHeader.getChannelId()] = message_;
+    } else if (frameHeader.getType() == FrameType::FIRST) {
+        messageBuffer_.erase(frameHeader.getChannelId());
+        message_ = std::make_shared<Message>(frameHeader.getChannelId(), frameHeader.getEncryptionType(), frameHeader.getMessageType());
+    } else {
+        auto bufferedMessage = messageBuffer_.find(frameHeader.getChannelId());
+        if (bufferedMessage != messageBuffer_.end()) {
+            message_ = std::move(bufferedMessage->second);
+            messageBuffer_.erase(bufferedMessage);
+        } else {
+            if (Log::isWarn()) Log_w("%s / missing buffered message for frameType %s", channelIdToString(frameHeader.getChannelId()).c_str(), frameTypeToString(frameHeader.getType()).c_str());
+            message_ = std::make_shared<Message>(frameHeader.getChannelId(), frameHeader.getEncryptionType(), frameHeader.getMessageType());
+        }
     }
 
     recentFrameType_ = frameHeader.getType();
@@ -145,16 +137,41 @@ void MessageInStream::receiveFramePayloadHandler(const common::DataConstBuffer& 
         message_->insertPayload(buffer);
     }
 
-    if (recentFrameType_ == FrameType::BULK || recentFrameType_ == FrameType::LAST) {
+    if (recentFrameType_ == FrameType::BULK && message_->getPayload().empty()) {
+        // Partial TLS record buffered in Cryptor (WANT_READ): keep reading next frame
+        // instead of passing an empty payload to MessageId(data).
+        if (Log::isDebug()) Log_d("%s / empty BULK payload after decrypt (partial TLS fragment), waiting for next frame", channelIdToString(message_->getChannelId()).c_str());
+        message_.reset();
+        auto transportPromise = transport::ITransport::ReceivePromise::defer(strand_, "MessageInStream_frameHeaderHandler_continue");
+        transportPromise->then(
+                [this, self = this->shared_from_this()](common::Data data) mutable {
+                    this->receiveFrameHeaderHandler(common::DataConstBuffer(data));
+                },
+                [this, self = this->shared_from_this()](const error::Error &e) mutable {
+                    message_.reset();
+                    promise_->reject(e);
+                    promise_.reset();
+                });
+
+        transport_->receive(FrameHeader::getSizeOf(), std::move(transportPromise));
+    } else if (recentFrameType_ == FrameType::BULK || recentFrameType_ == FrameType::LAST) {
+        if (message_->getPayload().size() < 2) {
+            Log_e("%s / message payload too short (%zu bytes)", channelIdToString(message_->getChannelId()).c_str(), message_->getPayload().size());
+            message_.reset();
+            promise_->reject(error::Error(error::ErrorCode::PARSE_PAYLOAD));
+            promise_.reset();
+            return;
+        }
         if (Log::isVerbose()) Log_v("%s / message BULK or LAST, resolve: %s", channelIdToString(message_->getChannelId()).c_str(), message_->toString().c_str());
         if (Log::isVerbose() && Log::logProtocol()) Log_v("%s / plain payload: %s", channelIdToString(message_->getChannelId()).c_str(), common::dump(message_->getPayload()).c_str());
 
         promise_->resolve(std::move(message_));
-//        messageBuffer_[frameHeader.getChannelId()] = nullptr;
+        message_.reset();
         promise_.reset();
     } else {
         if (Log::isVerbose()) Log_v("%s / message FIRST or MIDDLE, wait to receive remaining data", channelIdToString(message_->getChannelId()).c_str());
-//        messageBuffer_[frameHeader.getChannelId()] = message;
+        messageBuffer_[message_->getChannelId()] = std::move(message_);
+        message_.reset();
         auto transportPromise = transport::ITransport::ReceivePromise::defer(strand_, "MessageInStream_frameHeaderHandler_continue");
         transportPromise->then(
                 [this, self = this->shared_from_this()](common::Data data) mutable {

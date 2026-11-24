@@ -13,6 +13,7 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 
 import it.smg.hu.R;
+import it.smg.hu.config.AppLocale;
 import it.smg.hu.config.Settings;
 import it.smg.hu.projection.InputDevice;
 import it.smg.hu.ui.settings.AdvancedFragment;
@@ -35,6 +36,7 @@ public class SettingsActivity extends FragmentActivity implements InputDevice.On
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        AppLocale.apply(this);
         setContentView(R.layout.activity_settings);
 
         findViewById(R.id.settingsBackBtn).setOnClickListener(v -> onBackPressed());

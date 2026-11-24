@@ -7,10 +7,13 @@ import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.os.Bundle;
 
+import java.util.Locale;
+
 import androidx.fragment.app.FragmentActivity;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import it.smg.hu.R;
+import it.smg.hu.config.AppLocale;
 import it.smg.hu.manager.ConnectionManager;
 import it.smg.hu.manager.ConnectionState;
 import it.smg.hu.manager.USBManager;
@@ -24,6 +27,9 @@ import it.smg.libs.common.Log;
 public class MainActivity extends FragmentActivity {
     private final static String TAG = "MainActivity";
     public static final int SETTINGS_ACTIVITY_REQUEST = 12345;
+
+    // Locale the views were inflated with; onResume rebuilds the screen if it changed.
+    private Locale createdLocale_;
 
     private USBManager usbManager_;
     private WIFIManager wifiManager_;
@@ -53,6 +59,12 @@ public class MainActivity extends FragmentActivity {
                         || ConnectionState.EXITED.name().equals(state)) {
                     playerLaunchPending_ = false;
                 }
+            } else if (WIFIManager.ACTION_WIFI_INCOMING_CONNECTION.equals(action)) {
+                launchIncomingWifiIfAllowed();
+            } else if (USBManager.DETACH_AOAP_DEVICE.equals(action)) {
+                if (wifiManager_ != null) {
+                    wifiManager_.checkNetwork();
+                }
             }
         }
     };
@@ -66,6 +78,8 @@ public class MainActivity extends FragmentActivity {
         wifiManager_ = WIFIManager.instance();
         localBroadcastManager_ = LocalBroadcastManager.getInstance(this);
 
+        AppLocale.apply(this);
+        createdLocale_ = AppLocale.target();
         setContentView(R.layout.activity_main);
         getSupportFragmentManager().beginTransaction()
                 .replace(R.id.home_content, new HomeFragment(), "HomeFragment")
@@ -82,6 +96,11 @@ public class MainActivity extends FragmentActivity {
     protected void onResume() {
         if (Log.isDebug()) Log.d(TAG, "onResume");
         super.onResume();
+        if (!AppLocale.target().equals(createdLocale_)) {
+            // The language was changed in the settings: rebuild with the new texts.
+            recreate();
+            return;
+        }
         playerLaunchPending_ = PlayerActivity.isActive();
         registerConnectionReceivers();
 
@@ -95,6 +114,9 @@ public class MainActivity extends FragmentActivity {
 
         if (wifiManager_ != null) {
             wifiManager_.checkNetwork();
+            if (wifiManager_.hasPendingAcceptedSocket()) {
+                launchIncomingWifiIfAllowed();
+            }
         }
 
         isActive_ = true;
@@ -115,6 +137,8 @@ public class MainActivity extends FragmentActivity {
         registerReceiver(wifiReceiver, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
         IntentFilter localFilter = new IntentFilter();
         localFilter.addAction(WIFIManager.CONNECT_WIFI);
+        localFilter.addAction(WIFIManager.ACTION_WIFI_INCOMING_CONNECTION);
+        localFilter.addAction(USBManager.DETACH_AOAP_DEVICE);
         localFilter.addAction(ConnectionManager.ACTION_STATE_CHANGED);
         localBroadcastManager_.registerReceiver(connectionReceiver, localFilter);
         receiversRegistered_ = true;
@@ -127,6 +151,22 @@ public class MainActivity extends FragmentActivity {
         unregisterReceiver(wifiReceiver);
         localBroadcastManager_.unregisterReceiver(connectionReceiver);
         receiversRegistered_ = false;
+    }
+
+    private void launchIncomingWifiIfAllowed() {
+        if (usbManager_ != null && usbManager_.aoapDevice() != null) {
+            return;
+        }
+        ConnectionState state = ConnectionManager.instance().state();
+        String mode = ConnectionManager.instance().mode();
+        if (ODAService.MODE_USB.equals(mode) && state != ConnectionState.IDLE && state != ConnectionState.EXITED) {
+            return;
+        }
+        if (state == ConnectionState.ERROR) {
+            ConnectionManager.instance().prepareRetry(ODAService.MODE_WIFI,
+                    getString(R.string.connection_wifi_connecting));
+        }
+        startConnectionManually(ODAService.MODE_WIFI);
     }
 
     public void startConnectionManually(String mode) {

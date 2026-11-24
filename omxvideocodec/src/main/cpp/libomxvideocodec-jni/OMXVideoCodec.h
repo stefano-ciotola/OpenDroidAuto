@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
+#include "DecoderOptions.h"
 #include "OMXSource.h"
 #include "OMXDecoder.h"
 #include <thread>
@@ -17,9 +18,9 @@ public:
 
     OMXVideoCodec();
 
-    status_t init(int fps);
+    status_t init(int fps, const DecoderOptions& options);
     void shutdown();
-    void setNativeWindow(ANativeWindow* nativeWindow, int height, int width);
+    void setNativeWindow(ANativeWindow* nativeWindow, int width, int height);
 
     OMXSource::Pointer source();
     OMXDecoder::Pointer decoder();
@@ -44,4 +45,6 @@ private:
     sp<ANativeWindow> nativeWindow_;
     ScreenSize screenSize_;
     int fps_;
+    DecoderOptions options_;
+    bool statsStarted_;
 };

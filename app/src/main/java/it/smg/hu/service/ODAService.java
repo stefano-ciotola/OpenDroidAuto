@@ -65,6 +65,7 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
     private volatile boolean isRunning_;
     private volatile boolean stopRequested_;
     private volatile boolean shutdownRequested_;
+    private volatile boolean errorQuit_;
     private String currentMode_;
 
     private final Runnable shutdownTimeout_ = new Runnable() {
@@ -88,6 +89,8 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
      * deadlock the very service that has to finish the teardown.
      */
     private final AtomicBoolean stopping_ = new AtomicBoolean(false);
+    private final AtomicBoolean starting_ = new AtomicBoolean(false);
+    private final Object entityLock_ = new Object();
 
     public ODAService() {}
 
@@ -110,41 +113,103 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
             return;
         }
         currentMode_ = MODE_USB;
-        stopRequested_ = false;
+        synchronized (entityLock_) {
+            stopRequested_ = false;
+        }
+        errorQuit_ = false;
+        if (wifiManager_ != null) {
+            wifiManager_.setSessionActive(true);
+        }
         ConnectionManager.instance().connecting(MODE_USB, getString(R.string.connection_usb_connecting));
         startThread_ = new Thread(() -> {
             Looper.prepare();
-
-            if (usbManager_.aoapDevice() != null) {
-                if (Log.isVerbose()) Log.v(TAG, "aoap device available, start in usb mode");
-                try {
-                    LibUsbDevice device = usbManager_.aoapDevice();
-                    if (device.open()) {
-                        if (Log.isInfo()) Log.i(TAG, "device opened");
-                        androidAutoEntity_ = AndroidAutoEntityFactory.create(this, device, surfaceView, keyHolder);
-                        if (stopRequested_) {
-                            androidAutoEntity_.delete();
-                            androidAutoEntity_ = null;
+            LibUsbDevice openedDevice = null;
+            AndroidAutoEntity builtEntity = null;
+            boolean published = false;
+            try {
+                LibUsbDevice device = usbManager_.aoapDevice();
+                if (device != null) {
+                    if (Log.isVerbose()) Log.v(TAG, "aoap device available, start in usb mode");
+                    try {
+                        if (device.open()) {
+                            openedDevice = device;
+                            if (Log.isInfo()) Log.i(TAG, "device opened");
+                            if (stopRequested_) {
+                                try {
+                                    openedDevice.close();
+                                } catch (Throwable ignored) {}
+                                if (wifiManager_ != null) {
+                                    wifiManager_.setSessionActive(false);
+                                }
+                                return;
+                            }
+                            builtEntity = AndroidAutoEntityFactory.create(this, device, surfaceView, keyHolder);
+                            if (stopRequested_ || stopping_.get()) {
+                                builtEntity.stop();
+                                builtEntity.delete();
+                                if (wifiManager_ != null) {
+                                    wifiManager_.setSessionActive(false);
+                                }
+                                return;
+                            }
+                            builtEntity.start(this);
+                            boolean aborted;
+                            synchronized (entityLock_) {
+                                aborted = stopRequested_ || stopping_.get();
+                                if (!aborted) {
+                                    androidAutoEntity_ = builtEntity;
+                                    isRunning_ = true;
+                                    published = true;
+                                    ConnectionManager.instance().active(getString(R.string.connection_usb_active));
+                                }
+                            }
+                            if (aborted) {
+                                builtEntity.stop();
+                                builtEntity.delete();
+                                if (wifiManager_ != null) {
+                                    wifiManager_.setSessionActive(false);
+                                }
+                                return;
+                            }
+                        } else {
+                            Log.e(TAG, "Error in open usb device");
+                            onAndroidAutoQuitOnError("USB OPEN DEVICE", -1);
                             return;
                         }
-                        androidAutoEntity_.start(this);
-                        isRunning_ = true;
-                        ConnectionManager.instance().active(getString(R.string.connection_usb_active));
-                    } else {
-                        Log.e(TAG, "Error in open usb device");
-                        onAndroidAutoQuitOnError("USB OPEN DEVICE", -1);
+                    } catch (Exception e){
+                        Log.e(TAG, "error", e);
+                        if (builtEntity != null) {
+                            boolean owned = !published;
+                            if (published) {
+                                synchronized (entityLock_) {
+                                    if (androidAutoEntity_ == builtEntity) {
+                                        androidAutoEntity_ = null;
+                                        owned = true;
+                                    }
+                                }
+                            }
+                            if (owned) {
+                                try { builtEntity.stop(); } catch (Throwable ignored) {}
+                                try { builtEntity.delete(); } catch (Throwable ignored) {}
+                            }
+                        } else if (openedDevice != null) {
+                            try { openedDevice.close(); } catch (Throwable ignored) {}
+                        }
+                        onAndroidAutoQuitOnError("USB GENERIC ERROR", -1);
+//                    onAndroidAutoQuit();
                         return;
                     }
-                } catch (Exception e){
-                    Log.e(TAG, "error", e);
-                    onAndroidAutoQuitOnError("USB GENERIC ERROR", -1);
-//                    onAndroidAutoQuit();
-                    return;
+                } else {
+                    if (wifiManager_ != null) {
+                        wifiManager_.setSessionActive(false);
+                    }
+                    ConnectionManager.instance().failed(MODE_USB, getString(R.string.connection_usb_unavailable));
+                    runNativeQuitOnMainThread(this::stop);
                 }
-            } else {
-                ConnectionManager.instance().failed(getString(R.string.connection_usb_unavailable));
+                if (Log.isInfo()) Log.i(TAG, "start usb thead completed");
+            } finally {
+                starting_.set(false);
             }
-            if (Log.isInfo()) Log.i(TAG, "start usb thead completed");
         });
         startThread_.start();
     }
@@ -154,39 +219,148 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
             return;
         }
         currentMode_ = MODE_WIFI;
-        stopRequested_ = false;
+        synchronized (entityLock_) {
+            stopRequested_ = false;
+        }
+        errorQuit_ = false;
         ConnectionManager.instance().connecting(MODE_WIFI, getString(R.string.connection_wifi_connecting));
         startThread_ = new Thread(() -> {
             Looper.prepare();
 
-            String ipAddress = wifiManager_.getIpAddress();
+            int acceptedFd = wifiManager_ != null ? wifiManager_.consumeAcceptedSocketFd() : -1;
+            String ipAddress = wifiManager_ != null ? wifiManager_.getIpAddress() : null;
+            boolean wasIncomingSocket = acceptedFd >= 0;
+            String endpointLabel = ipAddress;
+            TCPEndpoint tcpEndpoint = null;
+            AndroidAutoEntity builtEntity = null;
+            boolean published = false;
             try {
-                if (ipAddress != null) {
-//                    if (Log.isInfo()) Log.i(TAG, "Connect to ip " + ipAddress);
-                    TCPEndpoint tcpEndpoint = new TCPEndpoint(ipAddress);
-                    androidAutoEntity_ = AndroidAutoEntityFactory.create(this, tcpEndpoint, surfaceView, keyHolder);
+                if (wasIncomingSocket) {
+                    if (wifiManager_ != null) {
+                        wifiManager_.setSessionActive(true);
+                    }
+                    String localIp = wifiManager_ != null ? wifiManager_.getLocalIpAddress() : null;
+                    int port = wifiManager_ != null ? wifiManager_.getServerPort() : WIFIManager.DEFAULT_SERVER_PORT;
+                    endpointLabel = (localIp != null ? localIp : "0.0.0.0") + ":" + port;
                     if (stopRequested_) {
-                        androidAutoEntity_.delete();
-                        androidAutoEntity_ = null;
+                        TCPEndpoint.closeFd(acceptedFd);
+                        if (wifiManager_ != null) {
+                            wifiManager_.setSessionActive(false);
+                        }
                         return;
                     }
-                    androidAutoEntity_.start(this);
-                    isRunning_ = true;
-                    ConnectionManager.instance().active(getString(R.string.connection_wifi_active));
+                    tcpEndpoint = new TCPEndpoint(acceptedFd);
+                    acceptedFd = -1;
+                    builtEntity = AndroidAutoEntityFactory.create(this, tcpEndpoint, surfaceView, keyHolder);
+                } else if (ipAddress != null) {
+                    if (stopRequested_) {
+                        return;
+                    }
+                    try {
+                        tcpEndpoint = new TCPEndpoint(ipAddress);
+                        builtEntity = AndroidAutoEntityFactory.create(this, tcpEndpoint, surfaceView, keyHolder);
+                    } catch (TCPConnectException outboundEx) {
+                        // While outbound :5277 timed out or was refused, WAA BT RFCOMM may have brought
+                        // in a direct connection on :5288; seamlessly adopt it before failing.
+                        int lateFd = (!stopRequested_ && wifiManager_ != null)
+                                ? wifiManager_.consumeAcceptedSocketFd() : -1;
+                        if (lateFd < 0) {
+                            throw outboundEx;
+                        }
+                        wasIncomingSocket = true;
+                        acceptedFd = lateFd;
+                        if (wifiManager_ != null) {
+                            wifiManager_.setSessionActive(true);
+                        }
+                        String localIp = wifiManager_.getLocalIpAddress();
+                        endpointLabel = (localIp != null ? localIp : "0.0.0.0") + ":" + wifiManager_.getServerPort();
+                        tcpEndpoint = new TCPEndpoint(acceptedFd);
+                        acceptedFd = -1;
+                        builtEntity = AndroidAutoEntityFactory.create(this, tcpEndpoint, surfaceView, keyHolder);
+                    }
                 } else {
-                    ConnectionManager.instance().failed(getString(R.string.connection_wifi_gateway_error));
+                    if (wifiManager_ != null) {
+                        wifiManager_.setSessionActive(false);
+                    }
+                    ConnectionManager.instance().failed(MODE_WIFI, getString(R.string.connection_wifi_gateway_error));
+                    runNativeQuitOnMainThread(this::stop);
+                    return;
+                }
+
+                if (stopRequested_ || stopping_.get()) {
+                    builtEntity.stop();
+                    builtEntity.delete();
+                    if (wifiManager_ != null) {
+                        wifiManager_.setSessionActive(false);
+                    }
+                    return;
+                }
+
+                if (wifiManager_ != null) {
+                    wifiManager_.setSessionActive(true);
+                    int staleFd = wifiManager_.consumeAcceptedSocketFd();
+                    if (staleFd >= 0) {
+                        TCPEndpoint.closeFd(staleFd);
+                    }
+                }
+                builtEntity.start(this);
+                boolean aborted;
+                synchronized (entityLock_) {
+                    aborted = stopRequested_ || stopping_.get();
+                    if (!aborted) {
+                        androidAutoEntity_ = builtEntity;
+                        isRunning_ = true;
+                        published = true;
+                        ConnectionManager.instance().active(getString(R.string.connection_wifi_active));
+                    }
+                }
+                if (aborted) {
+                    builtEntity.stop();
+                    builtEntity.delete();
+                    if (wifiManager_ != null) {
+                        wifiManager_.setSessionActive(false);
+                    }
+                    return;
                 }
                 if (Log.isInfo()) Log.i(TAG, "start wifi thead completed");
-            } catch (TCPConnectException e){
-                Log.e(TAG, "TCP Connection error", e);
-                // The phone refuses port 5277 unless Android Auto Wireless is
-                // actually running on it. Say so on screen: the projection window
-                // closes within a second either way, which otherwise looks
-                // exactly like the app crashing.
-                String reason = getString(R.string.connection_wifi_endpoint_error, ipAddress);
-                ConnectionManager.instance().failed(reason);
+            } catch (Exception e){
+                Log.e(TAG, "Wi-Fi connection error", e);
+                if (acceptedFd >= 0) {
+                    TCPEndpoint.closeFd(acceptedFd);
+                }
+                if (builtEntity != null) {
+                    boolean owned = !published;
+                    if (published) {
+                        synchronized (entityLock_) {
+                            if (androidAutoEntity_ == builtEntity) {
+                                androidAutoEntity_ = null;
+                                owned = true;
+                            }
+                        }
+                    }
+                    if (owned) {
+                        try {
+                            builtEntity.stop();
+                        } catch (Throwable ignored) {}
+                        try {
+                            builtEntity.delete();
+                        } catch (Throwable ignored) {}
+                    }
+                } else if (tcpEndpoint != null) {
+                    tcpEndpoint.delete();
+                }
+                if (wifiManager_ != null) {
+                    wifiManager_.setSessionActive(false);
+                }
+                String target = endpointLabel != null ? endpointLabel : "";
+                String reason = wasIncomingSocket
+                        ? getString(R.string.connection_wifi_incoming_error, target)
+                        : getString(R.string.connection_wifi_endpoint_error, target);
+                ConnectionManager.instance().failed(MODE_WIFI, reason);
                 notifyUser(reason);
-                stop();
+                runNativeQuitOnMainThread(this::stop);
+            } finally {
+                starting_.set(false);
             }
         });
         startThread_.start();
@@ -197,7 +371,10 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
             return;
         }
         shutdownRequested_ = true;
-        AndroidAutoEntity entity = androidAutoEntity_;
+        AndroidAutoEntity entity;
+        synchronized (entityLock_) {
+            entity = androidAutoEntity_;
+        }
         if (entity == null) {
             ConnectionManager.instance().userExited(getString(R.string.connection_user_stopped));
             stop();
@@ -215,15 +392,31 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
         }
     }
 
+    public boolean isSessionActive() {
+        return (starting_.get() || (isRunning_ && androidAutoEntity_ != null)) && !stopping_.get();
+    }
+
+    public String currentMode() {
+        return currentMode_;
+    }
+
     public void releaseFocus(){
-        if (androidAutoEntity_ != null) {
-            androidAutoEntity_.releaseFocus();
+        AndroidAutoEntity entity;
+        synchronized (entityLock_) {
+            entity = androidAutoEntity_;
+        }
+        if (entity != null) {
+            entity.releaseFocus();
         }
     }
 
     public void gainFocus(){
-        if (androidAutoEntity_ != null) {
-            androidAutoEntity_.gainFocus();
+        AndroidAutoEntity entity;
+        synchronized (entityLock_) {
+            entity = androidAutoEntity_;
+        }
+        if (entity != null) {
+            entity.gainFocus();
         }
     }
 
@@ -233,7 +426,12 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
      * be left alone.
      */
     private boolean canStartSession(){
+        if (!starting_.compareAndSet(false, true)) {
+            if (Log.isWarn()) Log.w(TAG, "start ignored: session start already in progress");
+            return false;
+        }
         if (isRunning_ || androidAutoEntity_ != null || stopping_.get()) {
+            starting_.set(false);
             if (Log.isWarn()) Log.w(TAG, "start ignored: previous session still active or shutting down");
             return false;
         }
@@ -241,7 +439,9 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
     }
 
     public void stop(){
-        stopRequested_ = true;
+        synchronized (entityLock_) {
+            stopRequested_ = true;
+        }
         if (mainHandler_ != null) {
             mainHandler_.removeCallbacks(shutdownTimeout_);
         }
@@ -254,16 +454,30 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
         }
 
         try {
-            if (!isRunning_ && androidAutoEntity_ == null) {
+            LibUsbDevice sessionUsbDevice = MODE_USB.equals(currentMode_)
+                    ? usbManager_.aoapDevice() : null;
+            AndroidAutoEntity entity;
+            boolean wasRunning;
+            synchronized (entityLock_) {
+                wasRunning = isRunning_;
+                isRunning_ = false;
+                entity = androidAutoEntity_;
+                androidAutoEntity_ = null;
+            }
+            if (!wasRunning && entity == null) {
                 if (Log.isInfo()) Log.i(TAG, "service not running, already stopped?");
+                if (wifiManager_ != null) {
+                    wifiManager_.setSessionActive(false);
+                }
+                if (sessionUsbDevice != null) {
+                    usbManager_.finishSession(sessionUsbDevice, errorQuit_);
+                }
                 localBroadcastManager_.sendBroadcast(new Intent(ODAService.STOP_ACTION));
 //                stopService(new Intent(this, ODAService.class));
                 stopForeground(true);
                 stopSelf();
                 return;
             }
-
-            isRunning_ = false;
 
             if (Log.isInfo()) Log.i(TAG, "Stop");
 
@@ -284,9 +498,6 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
                 }
             }
 
-            AndroidAutoEntity entity = androidAutoEntity_;
-            LibUsbDevice sessionUsbDevice = MODE_USB.equals(currentMode_)
-                    ? usbManager_.aoapDevice() : null;
             if (entity != null) {
                 try {
                     entity.stop();
@@ -304,7 +515,10 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
             }
 
             if (sessionUsbDevice != null) {
-                usbManager_.finishSession(sessionUsbDevice);
+                usbManager_.finishSession(sessionUsbDevice, errorQuit_);
+            }
+            if (wifiManager_ != null) {
+                wifiManager_.setSessionActive(false);
             }
 
             Intent stopIntent = new Intent(ODAService.STOP_ACTION);
@@ -321,6 +535,7 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
             startThread_ = null;
             currentMode_ = null;
             shutdownRequested_ = false;
+            errorQuit_ = false;
             stopping_.set(false);
         }
 
@@ -383,8 +598,9 @@ public class ODAService extends Service implements IAndroidAutoEntityEventHandle
                 return;
             }
             Log.e(TAG, "closing with error " + error + "(" + nativeErrorCode + ")");
+            errorQuit_ = true;
             String message = getString(R.string.connection_native_error_code, error, nativeErrorCode);
-            ConnectionManager.instance().failed(message);
+            ConnectionManager.instance().failed(currentMode_, message);
             notifyUser(message);
 
             stop();

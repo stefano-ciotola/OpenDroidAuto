@@ -13,4 +13,20 @@
         android:layout_height="match_parent"
         android:layout_gravity="center" />
 
+    <!-- Video statistics overlay (Settings > Video). Not clickable, so touches
+         still reach the projection underneath. -->
+    <TextView
+        android:id="@+id/videoStats"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|left"
+        android:background="#B0000000"
+        android:clickable="false"
+        android:focusable="false"
+        android:padding="4dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="11sp"
+        android:typeface="monospace"
+        android:visibility="gone" />
+
 </FrameLayout>

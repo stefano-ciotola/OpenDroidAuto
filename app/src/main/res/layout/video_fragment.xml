@@ -115,7 +115,8 @@
     <CheckBox
         android:id="@+id/showMediaNotification"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/video_show_media_notification"
@@ -124,7 +125,8 @@
     <CheckBox
         android:id="@+id/showNavigationNotification"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/video_show_navigation_notification"
@@ -133,10 +135,68 @@
     <CheckBox
         android:id="@+id/showAppBadge"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/video_show_app_badge"
+        android:textColor="@color/settings_text_primary" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:gravity="left|center_vertical"
+        android:textColor="@color/settings_text_primary"
+        android:textStyle="bold"
+        android:text="@string/video_settings_experimental"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:gravity="left|center_vertical"
+        android:textColor="@color/settings_text_secondary"
+        android:text="@string/video_settings_experimental_hint"/>
+
+    <CheckBox
+        android:id="@+id/videoStatsOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
+        android:layout_gravity="left"
+        android:layout_marginTop="6dp"
+        android:text="@string/video_stats_overlay"
+        android:textColor="@color/settings_text_primary" />
+
+    <CheckBox
+        android:id="@+id/videoDecoderOneInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
+        android:layout_gravity="left"
+        android:layout_marginTop="6dp"
+        android:text="@string/video_decoder_one_input"
+        android:textColor="@color/settings_text_primary" />
+
+    <CheckBox
+        android:id="@+id/videoDecoderNvidiaLowLatency"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
+        android:layout_gravity="left"
+        android:layout_marginTop="6dp"
+        android:text="@string/video_decoder_nvidia_low_latency"
+        android:textColor="@color/settings_text_primary" />
+
+    <CheckBox
+        android:id="@+id/videoDecoderLegacyDrop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
+        android:layout_gravity="left"
+        android:layout_marginTop="6dp"
+        android:text="@string/video_decoder_legacy_drop"
         android:textColor="@color/settings_text_primary" />
 
 </LinearLayout>
