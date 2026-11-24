@@ -6,7 +6,7 @@
     <string name="home_status_waiting">AGUARDANDO</string>
     <string name="home_status_ready">PRONTO</string>
     <string name="home_waiting_title">Conecte seu telefone</string>
-    <string name="home_waiting_detail">O botão Start aparece quando o USB ou Wi-Fi estiver pronto.</string>
+    <string name="home_waiting_detail">Use o cabo USB. O botão de iniciar aparece à direita.</string>
     <string name="home_ready_title">Pronto para iniciar</string>
     <string name="home_ready_detail">O USB está preparado. Pressione Iniciar para abrir o Android Auto.</string>
     <string name="home_usb_waiting">USB aguardando</string>
@@ -168,4 +168,41 @@
     <string name="protocol_error">Erro de protocolo. Código nativo: %1$d</string>
     <string name="wifi_transfer_error">Erro de comunicação Wi-Fi. Código nativo: %1$d</string>
     <string name="generic_error">Erro genérico. Código nativo: %1$d</string>
+
+    <!-- New UI: home readout, start panel, settings rail and sections -->
+    <string name="home_row_video">Vídeo</string>
+    <string name="home_value_usb_ready">Pronto</string>
+    <string name="home_value_usb_waiting">Aguardando</string>
+    <string name="home_value_usb_busy">Em uso</string>
+    <string name="home_value_usb_error">Indisponível</string>
+    <string name="home_value_wifi_off">Desligado</string>
+    <string name="home_value_wifi_waiting">Aguardando</string>
+    <string name="home_panel_wait_title">Iniciar aparece aqui</string>
+    <string name="home_panel_wait_detail">quando o celular estiver conectado</string>
+    <string name="home_panel_start">Iniciar</string>
+    <string name="home_panel_recover">Recuperar</string>
+    <string name="home_panel_recover_detail">a conexão USB</string>
+    <string name="home_panel_retry">Tentar de novo</string>
+    <string name="home_panel_retry_detail">conectar</string>
+    <string name="home_panel_connecting">Conectando…</string>
+    <string name="home_panel_stopping">Encerrando…</string>
+    <string name="home_panel_permission">Permissão USB…</string>
+    <string name="home_panel_active">Projetando</string>
+    <string name="settings_nav_back">Voltar</string>
+    <string name="settings_nav_car">Carro</string>
+    <string name="settings_nav_video">Vídeo</string>
+    <string name="settings_nav_conn">Conexão</string>
+    <string name="settings_nav_keys">Teclas</string>
+    <string name="settings_nav_advanced">Avançado</string>
+    <string name="settings_section_general">GERAL</string>
+    <string name="settings_section_clock">RELÓGIO</string>
+    <string name="settings_section_vehicle">VEÍCULO</string>
+    <string name="settings_section_projection">PROJEÇÃO</string>
+    <string name="settings_section_background">EM SEGUNDO PLANO</string>
+    <string name="settings_section_diagnostics">DIAGNÓSTICO E DECODIFICADOR</string>
+    <string name="settings_section_wireless">SEM FIO</string>
+    <string name="theme_title">Tema</string>
+    <string name="theme_option_dark">Escuro</string>
+    <string name="theme_option_light">Claro</string>
+
 </resources>

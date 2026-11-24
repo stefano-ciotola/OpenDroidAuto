@@ -5,9 +5,9 @@
 	<string name="home_status_waiting">IN ATTESA</string>
 	<string name="home_status_ready">PRONTO</string>
 	<string name="home_waiting_title">Collega il telefono</string>
-	<string name="home_waiting_detail">Il pulsante Avvia compare quando USB o Wi-Fi sono pronti.</string>
-	<string name="home_ready_title">Pronto all\'avvio</string>
-	<string name="home_ready_detail">USB pronta. Premi Avvia per aprire Android Auto.</string>
+	<string name="home_waiting_detail">Usa il cavo USB. Il pulsante di avvio comparirà qui a destra.</string>
+	<string name="home_ready_title">Telefono pronto</string>
+	<string name="home_ready_detail">Collegato via USB. Premi Avvia per aprire Android Auto.</string>
 	<string name="home_usb_waiting">USB in attesa</string>
 	<string name="home_wifi_off">Wi-Fi spento</string>
 	<string name="home_retry">RIPROVA</string>
@@ -183,5 +183,41 @@
 	<string name="protocol_error">Errore di protocollo. Errore AA nativo: %1$d</string>
 	<string name="wifi_transfer_error">Errore di comunicazione Wi-Fi. Errore AA nativo: %1$d</string>
 	<string name="generic_error">Errore generico. Errore AA nativo: %1$d</string>
+
+	<!-- New UI: home readout, start panel, settings rail and sections -->
+	<string name="home_row_video">Video</string>
+	<string name="home_value_usb_ready">Pronta</string>
+	<string name="home_value_usb_waiting">In attesa</string>
+	<string name="home_value_usb_busy">In uso</string>
+	<string name="home_value_usb_error">Non disponibile</string>
+	<string name="home_value_wifi_off">Spento</string>
+	<string name="home_value_wifi_waiting">In attesa</string>
+	<string name="home_panel_wait_title">Avvia comparirà qui</string>
+	<string name="home_panel_wait_detail">quando il telefono è collegato</string>
+	<string name="home_panel_start">Avvia</string>
+	<string name="home_panel_recover">Ripristina</string>
+	<string name="home_panel_recover_detail">la connessione USB</string>
+	<string name="home_panel_retry">Riprova</string>
+	<string name="home_panel_retry_detail">la connessione</string>
+	<string name="home_panel_connecting">Connessione…</string>
+	<string name="home_panel_stopping">Chiusura…</string>
+	<string name="home_panel_permission">Permesso USB…</string>
+	<string name="home_panel_active">In proiezione</string>
+	<string name="settings_nav_back">Indietro</string>
+	<string name="settings_nav_car">Auto</string>
+	<string name="settings_nav_video">Video</string>
+	<string name="settings_nav_conn">Connessione</string>
+	<string name="settings_nav_keys">Tasti</string>
+	<string name="settings_nav_advanced">Avanzate</string>
+	<string name="settings_section_general">GENERALE</string>
+	<string name="settings_section_clock">OROLOGIO</string>
+	<string name="settings_section_vehicle">VEICOLO</string>
+	<string name="settings_section_projection">PROIEZIONE</string>
+	<string name="settings_section_background">IN BACKGROUND</string>
+	<string name="settings_section_diagnostics">DIAGNOSTICA E DECODER</string>
+	<string name="settings_section_wireless">WIRELESS</string>
+	<string name="theme_title">Tema</string>
+	<string name="theme_option_dark">Scuro</string>
+	<string name="theme_option_light">Chiaro</string>
 
 </resources>

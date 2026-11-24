@@ -688,7 +688,7 @@ public class Settings {
 
     public class Appearance extends Base {
         public static final String DARK_THEME = "darkTheme";
-        public static final boolean DARK_THEME_DEFAULT_VALUE = false;
+        public static final boolean DARK_THEME_DEFAULT_VALUE = true;
         /** App language: "it", "en", "pt" or AppLocale.SYSTEM. */
         public static final String LANGUAGE = "language";
         public static final String LANGUAGE_DEFAULT_VALUE = "it";

@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.Spinner;
@@ -12,6 +13,7 @@ import android.widget.Spinner;
 import it.smg.hu.R;
 import it.smg.hu.config.AppLocale;
 import it.smg.hu.config.Settings;
+import it.smg.hu.ui.Ui;
 
 public class CarFragment extends BaseSettingsFragment {
 
@@ -53,6 +55,9 @@ public class CarFragment extends BaseSettingsFragment {
                     return null;
                 });
 
+        view.findViewById(R.id.theme_dark).setOnClickListener(v -> chooseTheme(true));
+        view.findViewById(R.id.theme_light).setOnClickListener(v -> chooseTheme(false));
+
         EditText swVersion = view.findViewById(R.id.sw_version);
         initEditText(swVersion, settings.car, Settings.Car.CAR_SETTINGS_SW_VERSION, Settings.Car.CAR_SETTINGS_SW_VERSION_DEFAULT_VALUE, null);
 
@@ -70,6 +75,47 @@ public class CarFragment extends BaseSettingsFragment {
 
         return view;
 
+    }
+
+    @Override
+    public void onViewCreated(View view, Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        renderThemeSegment(view);
+    }
+
+    /** Two-option segmented control: Dark | Light. */
+    @SuppressWarnings("deprecation")
+    private void renderThemeSegment(View view) {
+        Ui.Palette p = Ui.palette(requireContext());
+        view.findViewById(R.id.theme_segment).setBackgroundDrawable(
+                Ui.rounded(requireContext(), p.dark ? p.bg : p.rail, 11, p.hairline));
+        styleSegment(view.findViewById(R.id.theme_dark), p, p.dark);
+        styleSegment(view.findViewById(R.id.theme_light), p, !p.dark);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void styleSegment(Button button, Ui.Palette p, boolean selected) {
+        if (selected) {
+            button.setBackgroundDrawable(Ui.rounded(requireContext(), p.dark ? p.trackOff : p.surface, 8, 0));
+        } else {
+            button.setBackgroundDrawable(Ui.pressable(Ui.rounded(requireContext(), 0x00000000, 8, 0),
+                    Ui.rounded(requireContext(), p.selected, 8, 0)));
+        }
+        button.setTextColor(selected ? p.text : p.muted);
+        button.setSelected(selected);
+    }
+
+    private void chooseTheme(boolean dark) {
+        if (dark == settings.appearance.darkTheme()) {
+            return;
+        }
+        settings.appearance.darkTheme(dark);
+        // Every screen reads the palette when it is built: rebuild this one,
+        // the home screen restyles itself when settings close.
+        Activity activity = getActivity();
+        if (activity != null) {
+            activity.recreate();
+        }
     }
 
     @Override
