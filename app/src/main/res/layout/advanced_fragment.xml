@@ -28,7 +28,8 @@
     <CheckBox
         android:id="@+id/logProtocol"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/advanced_settings_logProtocol"
@@ -37,7 +38,8 @@
     <CheckBox
         android:id="@+id/enable_debug"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/advanced_settings_enabledebug"
@@ -65,7 +67,8 @@
     <CheckBox
         android:id="@+id/enable_wifi"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/advanced_settings_enablewifi"
@@ -84,7 +87,8 @@
     <CheckBox
         android:id="@+id/enable_hondaintegration"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/advanced_settings_enablehondaintegration"
@@ -93,7 +97,8 @@
     <CheckBox
         android:id="@+id/enable_hondamicvr"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/advanced_settings_enablehondamicvr"
@@ -102,7 +107,8 @@
     <CheckBox
         android:id="@+id/enable_usebtmicvr"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/advanced_settings_usebtmicvr"
@@ -111,7 +117,8 @@
     <CheckBox
         android:id="@+id/enable_hondaimid"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/advanced_settings_enablehondaimid"

@@ -7,10 +7,13 @@ import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.os.Bundle;
 
+import java.util.Locale;
+
 import androidx.fragment.app.FragmentActivity;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import it.smg.hu.R;
+import it.smg.hu.config.AppLocale;
 import it.smg.hu.manager.ConnectionManager;
 import it.smg.hu.manager.ConnectionState;
 import it.smg.hu.manager.USBManager;
@@ -24,6 +27,9 @@ import it.smg.libs.common.Log;
 public class MainActivity extends FragmentActivity {
     private final static String TAG = "MainActivity";
     public static final int SETTINGS_ACTIVITY_REQUEST = 12345;
+
+    // Locale the views were inflated with; onResume rebuilds the screen if it changed.
+    private Locale createdLocale_;
 
     private USBManager usbManager_;
     private WIFIManager wifiManager_;
@@ -72,6 +78,8 @@ public class MainActivity extends FragmentActivity {
         wifiManager_ = WIFIManager.instance();
         localBroadcastManager_ = LocalBroadcastManager.getInstance(this);
 
+        AppLocale.apply(this);
+        createdLocale_ = AppLocale.target();
         setContentView(R.layout.activity_main);
         getSupportFragmentManager().beginTransaction()
                 .replace(R.id.home_content, new HomeFragment(), "HomeFragment")
@@ -88,6 +96,11 @@ public class MainActivity extends FragmentActivity {
     protected void onResume() {
         if (Log.isDebug()) Log.d(TAG, "onResume");
         super.onResume();
+        if (!AppLocale.target().equals(createdLocale_)) {
+            // The language was changed in the settings: rebuild with the new texts.
+            recreate();
+            return;
+        }
         playerLaunchPending_ = PlayerActivity.isActive();
         registerConnectionReceivers();
 

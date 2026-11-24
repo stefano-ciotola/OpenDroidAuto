@@ -22,6 +22,7 @@ import android.widget.TextView;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import it.smg.hu.R;
+import it.smg.hu.config.AppLocale;
 import it.smg.hu.config.Settings;
 import it.smg.hu.manager.HondaConnectManager;
 import it.smg.hu.manager.ConnectionManager;
@@ -90,6 +91,7 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
+        AppLocale.apply(this);
         setContentView(R.layout.activity_player);
 
         HondaConnectManager hondaManager = hondaManager();

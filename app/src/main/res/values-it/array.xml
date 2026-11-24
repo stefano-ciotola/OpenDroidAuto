@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="video_nightmode_labels">
+        <item>SENSORE</item>
+        <item>ORARIO/GPS</item>
+        <item>GIORNO</item>
+        <item>NOTTE</item>
+    </string-array>
+</resources>

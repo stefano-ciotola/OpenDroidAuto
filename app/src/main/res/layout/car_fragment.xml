@@ -13,6 +13,22 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:gravity="left|center_vertical"
+        android:labelFor="@id/app_language"
+        android:textColor="@color/settings_text_primary"
+        android:text="@string/app_language"/>
+
+    <Spinner
+        android:id="@+id/app_language"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:textColor="@color/settings_text_primary"
+        android:gravity="left|center_vertical"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="left|center_vertical"
         android:labelFor="@id/hu_name"
         android:textColor="@color/settings_text_primary"
         android:text="@string/car_settings_hu_name"/>
@@ -148,7 +164,8 @@
     <CheckBox
         android:id="@+id/play_media_during_vr"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:textColor="@color/settings_text_primary"
@@ -157,7 +174,8 @@
     <CheckBox
         android:id="@+id/hide_clock"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:textColor="@color/settings_text_primary"
@@ -166,7 +184,8 @@
     <CheckBox
         android:id="@+id/hide_hu_clock"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:textColor="@color/settings_text_primary"
@@ -175,7 +194,8 @@
     <CheckBox
         android:id="@+id/left_drive"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:textColor="@color/settings_text_primary"
@@ -185,7 +205,8 @@
     <CheckBox
         android:id="@+id/aa_wifi"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="wrap_content"
+        android:minHeight="52dp"
         android:layout_gravity="left"
         android:layout_marginTop="6dp"
         android:text="@string/car_settings_aa_wifi" />

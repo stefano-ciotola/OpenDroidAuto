@@ -1,13 +1,16 @@
 package it.smg.hu.ui.settings;
 
+import android.app.Activity;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.Spinner;
 
 import it.smg.hu.R;
+import it.smg.hu.config.AppLocale;
 import it.smg.hu.config.Settings;
 
 public class CarFragment extends BaseSettingsFragment {
@@ -37,6 +40,18 @@ public class CarFragment extends BaseSettingsFragment {
 
         EditText swBuild = view.findViewById(R.id.sw_build);
         initEditText(swBuild, settings.car, Settings.Car.CAR_SETTINGS_SW_BUILD, Settings.Car.CAR_SETTINGS_SW_BUILD_DEFAULT_VALUE, null);
+
+        Spinner language = view.findViewById(R.id.app_language);
+        initSpinner(language, R.array.app_language_labels, R.array.app_language_values, settings.appearance,
+                Settings.Appearance.LANGUAGE, Settings.Appearance.LANGUAGE_DEFAULT_VALUE, () -> {
+                    // Also called once when the spinner is first laid out: apply()
+                    // reports no change then, so the screen is not rebuilt in a loop.
+                    Activity activity = getActivity();
+                    if (activity != null && AppLocale.apply(activity)) {
+                        activity.recreate();
+                    }
+                    return null;
+                });
 
         EditText swVersion = view.findViewById(R.id.sw_version);
         initEditText(swVersion, settings.car, Settings.Car.CAR_SETTINGS_SW_VERSION, Settings.Car.CAR_SETTINGS_SW_VERSION_DEFAULT_VALUE, null);

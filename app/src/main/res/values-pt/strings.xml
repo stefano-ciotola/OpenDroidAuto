@@ -85,6 +85,7 @@
     <string name="main_notification_title">Modo Android Auto</string>
     <string name="main_notification_content">Modo Android Auto</string>
     <string name="popup_notification_content">Android Auto disponível. Toque para conectar.</string>
+    <string name="notification_turn_off">Desativar</string>
     <string name="media_status_update_message">Atualização de mídia: fonte %1$s, estado %2$s, progresso %3$d</string>
     <string name="widget_start_label_no_usb">Sem USB</string>
     <string name="widget_start_label">Iniciar</string>
@@ -102,12 +103,17 @@
     <string name="car_settings_hide_hu_clock">Ocultar o relógio da central durante o Android Auto (Honda Connect)</string>
     <string name="car_settings_left_drive">Volante à esquerda</string>
     <string name="car_settings_aa_wifi">Usar Android Auto sem fio</string>
+    <string name="app_language">Idioma do app</string>
+    <string name="app_language_system">Idioma do sistema</string>
     <string name="video_settings_sw_dec">Usar decodificador por software (pode ficar lento)</string>
     <string name="video_settings_resolution">Resolução</string>
     <string name="video_settings_fps">FPS</string>
     <string name="video_settings_dpi">DPI</string>
     <string name="video_settings_margin">Margem</string>
+    <string name="video_settings_margin_error">Formato de margem inválido, use x,y</string>
     <string name="video_settings_nightmode">Modo noturno</string>
+    <string name="video_settings_light_sensor_missing">Sensor de luz indisponível, usando HORA/GPS</string>
+    <string name="audio_settings_micsource">Fonte do microfone</string>
     <string name="video_show_media_notification">Mostrar notificação de mídia em segundo plano</string>
     <string name="video_show_navigation_notification">Mostrar notificação de navegação em segundo plano</string>
     <string name="video_show_app_badge">Mostrar indicador do aplicativo em segundo plano</string>
@@ -137,6 +143,7 @@
     <string name="keymap_settings_btnsource">Fonte</string>
     <string name="keymap_settings_btnplus">+</string>
     <string name="keymap_settings_btnminus">-</string>
+    <string name="keymap_press_key">Pressione a tecla para atribuir a %1$s</string>
     <string name="audio_settings">Áudio</string>
     <string name="advanced_settings_logDir">Pasta externa de logs</string>
     <string name="advanced_settings_enabledebug">Ativar log externo</string>

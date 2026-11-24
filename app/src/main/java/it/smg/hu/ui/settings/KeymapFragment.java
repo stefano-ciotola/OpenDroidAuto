@@ -130,7 +130,7 @@ public class KeymapFragment extends BaseSettingsFragment implements View.OnClick
         KeyMap c = (KeyMap) b.getTag();
 
         if (keyHolder_ != null) {
-            Toast.makeText(getActivity(), "Press a key to assign to " + c.keyName(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(getActivity(), getString(R.string.keymap_press_key, c.keyName()), Toast.LENGTH_SHORT).show();
             keyHolder_.setOnKeyListener(this);
 
             handler_.postDelayed(unsetKeyListener_, 5000);
