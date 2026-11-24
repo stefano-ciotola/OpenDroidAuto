@@ -110,6 +110,7 @@ configuration::IConfiguration::Pointer JAndroidAutoEntity::getConfiguration(JNIE
     jmethodID config_swVersion = env->GetMethodID(config_cls, "swVersion", "()Ljava/lang/String;");
     jmethodID config_playMediaDuringVr = env->GetMethodID(config_cls, "playMediaDuringVr", "()Z");
     jmethodID config_leftHandDrive = env->GetMethodID(config_cls, "leftHandDrive", "()Z");
+    jmethodID config_hideClock = env->GetMethodID(config_cls, "hideClock", "()Z");
 
     auto config = new configuration::Configuration();
     config->huName(getStringFromJava(env, jconfig, config_huName));
@@ -120,6 +121,9 @@ configuration::IConfiguration::Pointer JAndroidAutoEntity::getConfiguration(JNIE
     config->swVersion(getStringFromJava(env, jconfig, config_swVersion));
     config->playMediaDuringVr(env->CallBooleanMethod(jconfig, config_playMediaDuringVr) == JNI_TRUE);
     config->leftHandDrive(env->CallBooleanMethod(jconfig, config_leftHandDrive) == JNI_TRUE);
+    // Without this the "Hide Clock" setting never reached the phone: the
+    // ServiceDiscoveryResponse carried whatever happened to be in hideClock_.
+    config->hideClock(env->CallBooleanMethod(jconfig, config_hideClock) == JNI_TRUE);
 
     env->DeleteLocalRef(config_cls);
     config_cls = nullptr;
