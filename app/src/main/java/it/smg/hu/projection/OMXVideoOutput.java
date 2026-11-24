@@ -51,12 +51,37 @@ public class OMXVideoOutput extends VideoOutput /*implements Runnable*/ {
     @Keep
     @Override
     public boolean init() {
-        videoCodec_ = new OMXVideoCodec(fps_);
+        int options = decoderOptions();
+        if (Log.isInfo()) Log.i(TAG, "decoder options 0x" + Integer.toHexString(options));
+        videoCodec_ = new OMXVideoCodec(fps_, options);
         videoCodec_.setSurface(surfaceView_.getHolder().getSurface(), surfaceView_.getWidth(), surfaceView_.getHeight());
         videoCodec_.init();
         configured_ = true;
         running_ = true;
+        setActive(this);
         return true;
+    }
+
+    private int decoderOptions() {
+        int options = 0;
+        if (settings_.video.decoderOneInput()) {
+            options |= OMXVideoCodec.OPTION_ONE_INPUT_BUFFER;
+        }
+        if (settings_.video.decoderNvidiaLowLatency()) {
+            options |= OMXVideoCodec.OPTION_NVIDIA_LOW_LATENCY;
+        }
+        if (settings_.video.decoderLegacyDrop()) {
+            options |= OMXVideoCodec.OPTION_LEGACY_DROP;
+        }
+        if (settings_.video.statsOverlay()) {
+            options |= OMXVideoCodec.OPTION_STATS;
+        }
+        return options;
+    }
+
+    @Override
+    protected String statsReport() {
+        return running_ ? OMXVideoCodec.statsReport() : null;
     }
 
     @Keep
@@ -77,6 +102,7 @@ public class OMXVideoOutput extends VideoOutput /*implements Runnable*/ {
     @Override
     public void stop() {
         if(Log.isInfo()) Log.i(TAG, "stop");
+        clearActive(this);
         if (running_) {
             running_ = false;
             configured_ = false;

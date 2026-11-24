@@ -8,13 +8,16 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.TextView;
 
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
@@ -23,6 +26,7 @@ import it.smg.hu.config.Settings;
 import it.smg.hu.manager.HondaConnectManager;
 import it.smg.hu.manager.ConnectionManager;
 import it.smg.hu.projection.InputDevice;
+import it.smg.hu.projection.VideoOutput;
 import it.smg.hu.service.ODAService;
 import it.smg.hu.ui.notification.AppBadge;
 import it.smg.hu.ui.notification.NotificationFactory;
@@ -38,6 +42,19 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
 
     private SurfaceView surfaceView_;
     private View.OnKeyListener keyListener_;
+
+    // Video statistics overlay, refreshed from the native report (every 2 s).
+    private static final long STATS_REFRESH_MS = 1000;
+    private TextView statsView_;
+    private final Handler statsHandler_ = new Handler(Looper.getMainLooper());
+    private final Runnable statsTick_ = new Runnable() {
+        @Override
+        public void run() {
+            String report = VideoOutput.activeStatsReport();
+            statsView_.setText(report != null ? report : getString(R.string.video_stats_waiting));
+            statsHandler_.postDelayed(this, STATS_REFRESH_MS);
+        }
+    };
 
     private String startMode_;
     private boolean isRunning_ = false;
@@ -73,6 +90,7 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         }
 
         surfaceView_ = findViewById(R.id.surfaceView);
+        statsView_ = findViewById(R.id.videoStats);
     }
 
     @Override
@@ -137,12 +155,21 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
 
         initReceivers();
         isActive_ = true;
+
+        statsHandler_.removeCallbacks(statsTick_);
+        if (Settings.instance().video.statsOverlay()) {
+            statsView_.setVisibility(View.VISIBLE);
+            statsHandler_.post(statsTick_);
+        } else {
+            statsView_.setVisibility(View.GONE);
+        }
     }
 
     @Override
     protected void onPause() {
         if (Log.isDebug()) Log.d(TAG, "onPause");
         super.onPause();
+        statsHandler_.removeCallbacks(statsTick_);
         if (odaService_ != null) {
             odaService_.releaseFocus();
         }

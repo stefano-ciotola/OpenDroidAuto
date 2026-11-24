@@ -12,13 +12,24 @@ public class OMXVideoCodec {
 
     private static final String TAG = "OMXVideoCodec";
 
+    // Decoder options, a bit mask shared with DecoderOptions.h on the native side.
+    /** Hand the decoder one input buffer at a time (lower display latency). */
+    public static final int OPTION_ONE_INPUT_BUFFER = 1;
+    /** Enable the Nvidia low-latency decoder parameters when the decoder has them. */
+    public static final int OPTION_NVIDIA_LOW_LATENCY = 1 << 1;
+    /** Previous behaviour: flush the backlog after 8 frames / 250 ms and wait for an IDR. */
+    public static final int OPTION_LEGACY_DROP = 1 << 2;
+    /** Collect per-stage statistics, see {@link #statsReport()}. */
+    public static final int OPTION_STATS = 1 << 3;
+
     private static native void nativeInit();
     private native long nativeSetup();
     private native void nativeSurfaceInit(Object surface, int width, int height);
-    private native boolean nativeDecoderInit(int fps);
+    private native boolean nativeDecoderInit(int fps, int options);
     private native void nativeDelete();
     private native void nativeConsume(ByteBuffer buf, int len, long t);
     private native void nativeSetSps(ByteBuffer buf, int len);
+    private static native String nativeStatsReport();
 
     @Keep
     private long handle_ = 0;
@@ -29,7 +40,8 @@ public class OMXVideoCodec {
     private Surface surfaceView_;
     private int width_;
     private int height_;
-    private int fps_;
+    private final int fps_;
+    private final int options_;
 
     static {
         System.loadLibrary("c++_shared");
@@ -39,9 +51,10 @@ public class OMXVideoCodec {
         nativeInit();
     }
 
-    public OMXVideoCodec(int fps){
+    public OMXVideoCodec(int fps, int options){
         handle_ = nativeSetup();
         fps_ = fps;
+        options_ = options;
     }
 
     public void setSurface(Surface surface, int width, int height){
@@ -52,7 +65,16 @@ public class OMXVideoCodec {
     }
 
     public boolean init() {
-        return nativeDecoderInit(fps_);
+        return nativeDecoderInit(fps_, options_);
+    }
+
+    /**
+     * Latest statistics report, a few lines of plain text refreshed every two
+     * seconds, or null when statistics are off or no window has closed yet.
+     * Never blocks on the decoder.
+     */
+    public static String statsReport() {
+        return nativeStatsReport();
     }
 
     public void shutdown() {

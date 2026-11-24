@@ -11,6 +11,32 @@ public abstract class VideoOutput extends it.smg.libs.aasdk.projection.VideoOutp
 
     protected SurfaceView surfaceView_;
 
+    /** The output of the running session, for the statistics overlay. */
+    private static volatile VideoOutput active_;
+
+    /**
+     * Statistics of the running video output, or null when there is none or it
+     * does not collect any. Cheap and non-blocking, safe on the UI thread.
+     */
+    public static String activeStatsReport() {
+        VideoOutput output = active_;
+        return output == null ? null : output.statsReport();
+    }
+
+    protected static void setActive(VideoOutput output) {
+        active_ = output;
+    }
+
+    protected static void clearActive(VideoOutput output) {
+        if (active_ == output) {
+            active_ = null;
+        }
+    }
+
+    protected String statsReport() {
+        return null;
+    }
+
     public VideoOutput(SurfaceView surfaceView){
         surfaceView_ = surfaceView;
 

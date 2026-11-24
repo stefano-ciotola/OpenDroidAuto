@@ -237,6 +237,10 @@ public class Settings {
         public final static String VIDEO_SHOW_MEDIA_NOTIFICATION = "video_show_media_notification";
         public final static String VIDEO_SHOW_NAVIGATION_NOTIFICATION = "video_show_navigation_notification";
         public final static String VIDEO_SHOW_APP_BADGE = "video_show_app_badge";
+        public final static String VIDEO_STATS_OVERLAY = "video_stats_overlay";
+        public final static String VIDEO_DECODER_ONE_INPUT = "video_decoder_one_input";
+        public final static String VIDEO_DECODER_NVIDIA_LOW_LATENCY = "video_decoder_nvidia_low_latency";
+        public final static String VIDEO_DECODER_LEGACY_DROP = "video_decoder_legacy_drop";
 
         public final static int VIDEO_RESOLUTION_DEFAULT_VALUE = 1; // 480p
         public final static int VIDEO_FPS_DEFAULT_VALUE = 1; // 30 fps
@@ -246,6 +250,13 @@ public class Settings {
         public final static boolean VIDEO_SHOW_MEDIA_NOTIFICATION_DEFAULT_VALUE = true;
         public final static boolean VIDEO_SHOW_NAVIGATION_NOTIFICATION_DEFAULT_VALUE = true;
         public final static boolean VIDEO_SHOW_APP_BADGE_DEFAULT_VALUE = true;
+        // Diagnostics and experimental decoder switches (OMX decoder, Android 4.0.x).
+        // The two low-latency switches are harmless where unsupported: the
+        // Nvidia parameters are only set when the decoder knows them.
+        public final static boolean VIDEO_STATS_OVERLAY_DEFAULT_VALUE = false;
+        public final static boolean VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE = true;
+        public final static boolean VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE = true;
+        public final static boolean VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE = false;
 
         public int resolution(){
             return SP.getInt(VIDEO_RESOLUTION,VIDEO_RESOLUTION_DEFAULT_VALUE);
@@ -301,6 +312,34 @@ public class Settings {
         }
         public void showAppBadge(boolean value){
             set(VIDEO_SHOW_APP_BADGE, value);
+        }
+
+        public boolean statsOverlay() {
+            return get(VIDEO_STATS_OVERLAY, VIDEO_STATS_OVERLAY_DEFAULT_VALUE);
+        }
+        public void statsOverlay(boolean value){
+            set(VIDEO_STATS_OVERLAY, value);
+        }
+
+        public boolean decoderOneInput() {
+            return get(VIDEO_DECODER_ONE_INPUT, VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE);
+        }
+        public void decoderOneInput(boolean value){
+            set(VIDEO_DECODER_ONE_INPUT, value);
+        }
+
+        public boolean decoderNvidiaLowLatency() {
+            return get(VIDEO_DECODER_NVIDIA_LOW_LATENCY, VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE);
+        }
+        public void decoderNvidiaLowLatency(boolean value){
+            set(VIDEO_DECODER_NVIDIA_LOW_LATENCY, value);
+        }
+
+        public boolean decoderLegacyDrop() {
+            return get(VIDEO_DECODER_LEGACY_DROP, VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE);
+        }
+        public void decoderLegacyDrop(boolean value){
+            set(VIDEO_DECODER_LEGACY_DROP, value);
         }
     }
 

@@ -87,6 +87,13 @@
 	<string name="video_show_media_notification">Show Media notification when app is in background</string>
 	<string name="video_show_navigation_notification">Show Navigation notification when app is in background</string>
 	<string name="video_show_app_badge">Show an application badge when app is in background</string>
+	<string name="video_settings_experimental">Diagnostics and experimental decoder options</string>
+	<string name="video_settings_experimental_hint">Applied the next time Android Auto starts. Only used by the Android 4.0 decoder.</string>
+	<string name="video_stats_overlay">Show video statistics over the projection</string>
+	<string name="video_decoder_one_input">Feed the decoder one frame at a time (lower latency)</string>
+	<string name="video_decoder_nvidia_low_latency">Nvidia low-latency decoding (when the decoder supports it)</string>
+	<string name="video_decoder_legacy_drop">Drop late frames and wait for a key frame (previous behaviour)</string>
+	<string name="video_stats_waiting">Video statistics: waiting for the first report…</string>
 
 	<string name="enable_media_channel_settings">Enable Media Audio Channel</string>
 	<string name="enable_speech_channel_settings">Enable Speech Audio Channel</string>

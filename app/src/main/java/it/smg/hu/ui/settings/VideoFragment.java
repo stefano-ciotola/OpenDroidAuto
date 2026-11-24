@@ -101,6 +101,19 @@ public class VideoFragment extends BaseSettingsFragment {
         CheckBox showAppBadge = view.findViewById(R.id.showAppBadge);
         initCheckBox(showAppBadge, settings.video, Settings.Video.VIDEO_SHOW_APP_BADGE, Settings.Video.VIDEO_SHOW_APP_BADGE_DEFAULT_VALUE);
 
+        // Diagnostics and experimental decoder options, read when a session starts.
+        CheckBox statsOverlay = view.findViewById(R.id.videoStatsOverlay);
+        initCheckBox(statsOverlay, settings.video, Settings.Video.VIDEO_STATS_OVERLAY, Settings.Video.VIDEO_STATS_OVERLAY_DEFAULT_VALUE);
+
+        CheckBox decoderOneInput = view.findViewById(R.id.videoDecoderOneInput);
+        initCheckBox(decoderOneInput, settings.video, Settings.Video.VIDEO_DECODER_ONE_INPUT, Settings.Video.VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE);
+
+        CheckBox decoderNvidiaLowLatency = view.findViewById(R.id.videoDecoderNvidiaLowLatency);
+        initCheckBox(decoderNvidiaLowLatency, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_LATENCY, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE);
+
+        CheckBox decoderLegacyDrop = view.findViewById(R.id.videoDecoderLegacyDrop);
+        initCheckBox(decoderLegacyDrop, settings.video, Settings.Video.VIDEO_DECODER_LEGACY_DROP, Settings.Video.VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE);
+
         return view;
 
     }

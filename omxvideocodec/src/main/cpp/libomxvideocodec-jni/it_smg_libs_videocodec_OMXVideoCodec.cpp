@@ -1,4 +1,5 @@
 #include "it_smg_libs_videocodec_OMXVideoCodec.h"
+#include "VideoStats.h"
 #include <Log.h>
 
 jfieldID JOMXVideoCodec::handleId = nullptr;
@@ -20,8 +21,8 @@ void JOMXVideoCodec::setNativeWindow(ANativeWindow* nativeWindow, int height, in
     omxVideoCodec_->setNativeWindow(nativeWindow, height, width);
 }
 
-status_t JOMXVideoCodec::init(int fps){
-    return omxVideoCodec_->init(fps);
+status_t JOMXVideoCodec::init(int fps, int options){
+    return omxVideoCodec_->init(fps, DecoderOptions::fromBits(options));
 }
 
 void JOMXVideoCodec::shutdown(){
@@ -72,11 +73,22 @@ Java_it_smg_libs_omxvideocodec_OMXVideoCodec_nativeSurfaceInit(JNIEnv *env, jobj
 
 extern "C"
 JNIEXPORT jboolean JNICALL
-Java_it_smg_libs_omxvideocodec_OMXVideoCodec_nativeDecoderInit(JNIEnv *env, jobject thiz, jint fps) {
+Java_it_smg_libs_omxvideocodec_OMXVideoCodec_nativeDecoderInit(JNIEnv *env, jobject thiz, jint fps, jint options) {
     JOMXVideoCodec::Pointer jOMXVideoCodec = JOMXVideoCodec::getJOMXVideoCodec(env, thiz);
-    status_t ret = jOMXVideoCodec->init(fps);
+    status_t ret = jOMXVideoCodec->init(fps, options);
 
     return ret == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_it_smg_libs_omxvideocodec_OMXVideoCodec_nativeStatsReport(JNIEnv *env, jclass clazz) {
+    // The report is plain ASCII, as NewStringUTF requires.
+    const std::string report = VideoStats::instance().lastReport();
+    if (report.empty()) {
+        return nullptr;
+    }
+    return env->NewStringUTF(report.c_str());
 }
 
 extern "C"

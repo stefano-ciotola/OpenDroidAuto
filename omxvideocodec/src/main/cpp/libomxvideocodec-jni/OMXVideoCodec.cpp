@@ -1,7 +1,9 @@
 #include "OMXVideoCodec.h"
+#include "VideoStats.h"
 #include <Log.h>
 
 #include <unistd.h>
+#include <sys/prctl.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 #include <cinttypes>
@@ -14,7 +16,8 @@ OMXVideoCodec::OMXVideoCodec()
     , omxDecoder_(nullptr)
     , fps_(0)
     , decoderThreadInitialized_(false)
-    , decoderThreadQuitFlag_(false){
+    , decoderThreadQuitFlag_(false)
+    , statsStarted_(false){
 }
 
 OMXVideoCodec::~OMXVideoCodec() {
@@ -27,9 +30,16 @@ OMXVideoCodec::~OMXVideoCodec() {
     omxSource_ = nullptr;
 }
 
-status_t OMXVideoCodec::init(int fps){
+status_t OMXVideoCodec::init(int fps, const DecoderOptions& options){
     fps_ = fps;
+    options_ = options;
     if (Log::isInfo()) Log_i("FPS %d", fps_);
+
+    if (options_.stats) {
+        VideoStats::instance().start();
+        statsStarted_ = true;
+    }
+
     // Create decoder thread and wait until ready
     if (Log::isInfo()) Log_i("start omxDecoderThread");
 
@@ -64,29 +74,50 @@ void OMXVideoCodec::shutdown(){
         ANativeWindow_release(nativeWindow_.get());
     }
 
+    if (statsStarted_) {
+        VideoStats::instance().stop();
+        statsStarted_ = false;
+    }
+
     if (Log::isInfo()) Log_i("all done");
 }
 
 void OMXVideoCodec::init_omxDecoderThread() {
+    prctl(PR_SET_NAME, "ODA-OMXDecoder", 0, 0, 0);
     if (Log::isInfo()) Log_i("omxDecoderThread begins");
 
-    omxSource_ = new OMXSource(screenSize_.width, screenSize_.height, fps_);
+    omxSource_ = new OMXSource(screenSize_.width, screenSize_.height, fps_, options_.legacyDrop);
 
     if (Log::isDebug()) Log_d("Created OMXSource %p", omxSource_);
 
     omxDecoder_ = new OMXDecoder();
     omxDecoder_->setNativeWindow(nativeWindow_);
     omxDecoder_->setSource(omxSource_);
-    omxDecoder_->init();
+    const status_t initStatus = omxDecoder_->init(options_);
+
+    std::string summary = omxDecoder_->summary();
+    summary += std::string(" | legacy-drop ") + (options_.legacyDrop ? "on" : "off");
+    if (Log::isInfo()) Log_i("decoder options: %s", summary.c_str());
+    VideoStats::instance().setDecoderSummary(summary);
 
     std::unique_lock<std::mutex> codeclock(codecMutex_);
     decoderThreadInitialized_ = true;
     codeclock.unlock();
     omxDecoderCond_.notify_one();
 
-    while (!decoderThreadQuitFlag_) {
+    if (initStatus != OK) {
+        // Nothing to drive: calling read() on a decoder that never started only
+        // spins on an error. Frames keep being dropped by OMXSource's limits.
+        Log_e("decoder init failed (%d), no video will be shown", initStatus);
+    }
+
+    while (initStatus == OK && !decoderThreadQuitFlag_) {
         status_t ret = omxDecoder_->read();
         if (Log::isVerbose()) Log_v("omxDecoder_ read ret = %d", ret);
+        if (ret != OK && ret != INFO_FORMAT_CHANGED && ret != TIMED_OUT) {
+            // A codec in its error state answers immediately: do not burn a core.
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
     }
 
     if (Log::isInfo()) Log_i("omxDecoderThread ends");
@@ -120,6 +151,8 @@ void OMXVideoCodec::queueBuffer(common::DataConstBuffer& buffer, int64_t timesta
         if(Log::isVerbose()) Log_v("decoder is stopping, return");
         return;
     }
+
+    VideoStats::instance().onReceived(buffer.size, timestamp);
 
     auto* mBuffer = new MediaBuffer(buffer.size);
     if (Log::isVerbose()) Log_v("create buffer %p", mBuffer);
