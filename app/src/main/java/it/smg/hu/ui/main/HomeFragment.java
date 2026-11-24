@@ -62,7 +62,14 @@ public class HomeFragment extends Fragment {
                 usbStatus_.setText(R.string.home_usb_waiting);
             } else if (WIFIManager.CONNECT_WIFI.equals(action)) {
                 String ssid = intent.getStringExtra(WIFIManager.EXTRA_SSID);
-                wifiStatus_.setText(getString(R.string.home_wifi_ready, ssid == null ? "" : ssid));
+                String localIp = intent.getStringExtra(WIFIManager.EXTRA_LOCAL_IP);
+                int port = intent.getIntExtra(WIFIManager.EXTRA_PORT, WIFIManager.DEFAULT_SERVER_PORT);
+                if (localIp != null && !localIp.isEmpty()) {
+                    String hostLabel = (ssid != null && !ssid.isEmpty()) ? ssid : localIp;
+                    wifiStatus_.setText(getString(R.string.home_wifi_listening, hostLabel, localIp, port));
+                } else {
+                    wifiStatus_.setText(getString(R.string.home_wifi_ready, ssid == null ? "" : ssid));
+                }
             } else if (WIFIManager.DISCONNECT_WIFI.equals(action)) {
                 renderWifiAvailability();
             }
@@ -152,21 +159,39 @@ public class HomeFragment extends Fragment {
             // Move a Wi-Fi retry back to a startable state explicitly. ERROR is
             // otherwise blocked by ConnectionPolicy to prevent accidental
             // overlapping sessions from widgets or duplicate taps.
-            ConnectionManager.instance().transportAvailable(mode,
-                    ConnectionManager.instance().lastMessage());
+            ConnectionManager.instance().prepareRetry(mode,
+                    ODAService.MODE_WIFI.equals(mode)
+                            ? getString(R.string.connection_wifi_connecting)
+                            : getString(R.string.connection_usb_connecting));
+            if (ODAService.MODE_WIFI.equals(mode) && wifiManager_ != null
+                    && !wifiManager_.hasPendingAcceptedSocket()) {
+                wifiManager_.triggerWirelessStart();
+            }
             ((MainActivity) requireActivity()).startConnectionManually(mode);
         } else if (mode != null && (!ODAService.MODE_USB.equals(mode)
                 || (usbManager_ != null && usbManager_.aoapDevice() != null))) {
+            if (ODAService.MODE_WIFI.equals(mode) && wifiManager_ != null
+                    && !wifiManager_.hasPendingAcceptedSocket()) {
+                wifiManager_.triggerWirelessStart();
+            }
             ((MainActivity) requireActivity()).startConnectionManually(mode);
         }
     }
 
     private void renderWifiAvailability() {
-        if (Settings.instance().advanced.enableWiFi()) {
-            wifiStatus_.setText(R.string.home_wifi_waiting);
-        } else {
+        if (!Settings.instance().advanced.enableWiFi()) {
             wifiStatus_.setText(R.string.home_wifi_off);
+            return;
         }
+        if (wifiManager_ != null && wifiManager_.getLocalIpAddress() != null) {
+            String localIp = wifiManager_.getLocalIpAddress();
+            String ssid = wifiManager_.getNetworkSsid();
+            String hostLabel = (ssid != null && !ssid.isEmpty()) ? ssid : localIp;
+            wifiStatus_.setText(getString(R.string.home_wifi_listening,
+                    hostLabel, localIp, wifiManager_.getServerPort()));
+            return;
+        }
+        wifiStatus_.setText(R.string.home_wifi_waiting);
     }
 
     private void toggleTheme() {

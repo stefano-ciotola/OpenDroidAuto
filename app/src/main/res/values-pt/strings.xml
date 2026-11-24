@@ -37,6 +37,7 @@
     <string name="home_usb_ready">USB pronto</string>
     <string name="home_wifi_waiting">Wi-Fi aguardando</string>
     <string name="home_wifi_ready">Wi-Fi: %1$s</string>
+    <string name="home_wifi_listening">Wi-Fi: %1$s (%2$s:%3$d)</string>
     <string name="theme_light">TEMA: CLARO</string>
     <string name="theme_dark">TEMA: ESCURO</string>
     <string name="connection_usb_detected">Dispositivo USB detectado</string>
@@ -58,6 +59,7 @@
     <string name="connection_wifi_gateway_error">O gateway do hotspot do telefone não está pronto</string>
     <string name="connection_wifi_active">Android Auto conectado por Wi-Fi</string>
     <string name="connection_wifi_endpoint_error">O Android Auto não respondeu em %1$s:5277</string>
+    <string name="connection_wifi_incoming_error">Falha na conexão Wi-Fi recebida em %1$s</string>
     <string name="connection_session_ended">Sessão do Android Auto encerrada</string>
     <string name="connection_mode_missing">Nenhum modo de conexão foi informado</string>
     <string name="connection_user_stopped">Android Auto encerrado. Pressione Start para conectar novamente.</string>
@@ -140,7 +142,7 @@
     <string name="advanced_settings_enabledebug">Ativar log externo</string>
     <string name="advanced_settings_enabletoast">Exibir logs na tela</string>
     <string name="advanced_settings_enablewifi">Ativar Android Auto sem fio</string>
-    <string name="advanced_settings_enablewifi_hint">Modo legado: exige que o telefone exponha o Android Auto na porta TCP 5277. Apenas o hotspot e a opção Android Auto sem fio não habilitam essa porta.</string>
+    <string name="advanced_settings_enablewifi_hint">Conecte a multimídia ao hotspot do celular. Escuta conexões recebidas (porta 5288) ou conecta ao servidor da central multimídia do celular (porta 5277).</string>
     <string name="advanced_settings_enablehondaintegration">Ativar integração Honda</string>
     <string name="advanced_settings_enablehondamicvr">Ativar microfone Honda para comando de voz</string>
     <string name="advanced_settings_usebtmicvr">Bluetooth Mic VR</string>

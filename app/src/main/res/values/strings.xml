@@ -36,6 +36,7 @@
 	<string name="home_usb_ready">USB ready</string>
 	<string name="home_wifi_waiting">Wi-Fi waiting</string>
 	<string name="home_wifi_ready">Wi-Fi: %1$s</string>
+	<string name="home_wifi_listening">Wi-Fi: %1$s (%2$s:%3$d)</string>
 	<string name="theme_light">THEME: LIGHT</string>
 	<string name="theme_dark">THEME: DARK</string>
 	<string name="connection_usb_detected">USB device detected</string>
@@ -57,6 +58,7 @@
 	<string name="connection_wifi_gateway_error">Phone hotspot gateway is not ready</string>
 	<string name="connection_wifi_active">Android Auto connected through Wi-Fi</string>
 	<string name="connection_wifi_endpoint_error">Wi-Fi endpoint unreachable at %1$s:5277</string>
+	<string name="connection_wifi_incoming_error">Incoming Wi-Fi connection failed at %1$s</string>
 	<string name="connection_session_ended">Android Auto session ended</string>
 	<string name="connection_mode_missing">No connection mode was provided</string>
 	<string name="connection_user_stopped">Android Auto stopped. Press Start to connect again.</string>
@@ -126,7 +128,7 @@
 	<string name="advanced_settings_enabledebug">Enable external log</string>
 	<string name="advanced_settings_enabletoast">Enable Toast log</string>
 	<string name="advanced_settings_enablewifi">Enable Android Auto Wireless</string>
-	<string name="advanced_settings_enablewifi_hint">Legacy mode: this requires the phone to expose Android Auto on TCP port 5277. A hotspot and the Android Auto Wireless option alone do not enable it.</string>
+	<string name="advanced_settings_enablewifi_hint">Connect the head unit to the phone hotspot. Listens for incoming connections (port 5288) or connects to the phone head unit server (port 5277).</string>
 	<string name="advanced_settings_enablehondaintegration">Enable Honda Integration</string>
 	<string name="advanced_settings_enablehondamicvr">Enable Honda Mic VR</string>
 	<string name="advanced_settings_usebtmicvr">Bluetooth Mic VR</string>

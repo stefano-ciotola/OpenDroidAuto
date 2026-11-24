@@ -53,6 +53,12 @@ public class MainActivity extends FragmentActivity {
                         || ConnectionState.EXITED.name().equals(state)) {
                     playerLaunchPending_ = false;
                 }
+            } else if (WIFIManager.ACTION_WIFI_INCOMING_CONNECTION.equals(action)) {
+                launchIncomingWifiIfAllowed();
+            } else if (USBManager.DETACH_AOAP_DEVICE.equals(action)) {
+                if (wifiManager_ != null) {
+                    wifiManager_.checkNetwork();
+                }
             }
         }
     };
@@ -95,6 +101,9 @@ public class MainActivity extends FragmentActivity {
 
         if (wifiManager_ != null) {
             wifiManager_.checkNetwork();
+            if (wifiManager_.hasPendingAcceptedSocket()) {
+                launchIncomingWifiIfAllowed();
+            }
         }
 
         isActive_ = true;
@@ -115,6 +124,8 @@ public class MainActivity extends FragmentActivity {
         registerReceiver(wifiReceiver, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
         IntentFilter localFilter = new IntentFilter();
         localFilter.addAction(WIFIManager.CONNECT_WIFI);
+        localFilter.addAction(WIFIManager.ACTION_WIFI_INCOMING_CONNECTION);
+        localFilter.addAction(USBManager.DETACH_AOAP_DEVICE);
         localFilter.addAction(ConnectionManager.ACTION_STATE_CHANGED);
         localBroadcastManager_.registerReceiver(connectionReceiver, localFilter);
         receiversRegistered_ = true;
@@ -127,6 +138,22 @@ public class MainActivity extends FragmentActivity {
         unregisterReceiver(wifiReceiver);
         localBroadcastManager_.unregisterReceiver(connectionReceiver);
         receiversRegistered_ = false;
+    }
+
+    private void launchIncomingWifiIfAllowed() {
+        if (usbManager_ != null && usbManager_.aoapDevice() != null) {
+            return;
+        }
+        ConnectionState state = ConnectionManager.instance().state();
+        String mode = ConnectionManager.instance().mode();
+        if (ODAService.MODE_USB.equals(mode) && state != ConnectionState.IDLE && state != ConnectionState.EXITED) {
+            return;
+        }
+        if (state == ConnectionState.ERROR) {
+            ConnectionManager.instance().prepareRetry(ODAService.MODE_WIFI,
+                    getString(R.string.connection_wifi_connecting));
+        }
+        startConnectionManually(ODAService.MODE_WIFI);
     }
 
     public void startConnectionManually(String mode) {

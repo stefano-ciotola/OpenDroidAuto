@@ -168,6 +168,32 @@ void VideoService::onVideoFocusRequest(const aasdk::proto::messages::VideoFocusR
 //    channel_->receive(this->shared_from_this());
 }
 
+void VideoService::releaseFocus()
+{
+    if (!isRunning_ || !strand_) {
+        return;
+    }
+    strand_->dispatch([this, self = this->shared_from_this()]() {
+        if (!isRunning_) {
+            return;
+        }
+        this->sendVideoFocusReleaseIndication();
+    });
+}
+
+void VideoService::gainFocus()
+{
+    if (!isRunning_ || !strand_) {
+        return;
+    }
+    strand_->dispatch([this, self = this->shared_from_this()]() {
+        if (!isRunning_) {
+            return;
+        }
+        this->sendVideoFocusIndication();
+    });
+}
+
 void VideoService::sendVideoFocusIndication()
 {
     if(Log::isDebug()) Log_d("Video focus indication.");

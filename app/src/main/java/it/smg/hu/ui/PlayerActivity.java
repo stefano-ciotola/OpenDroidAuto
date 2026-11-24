@@ -62,6 +62,8 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
     private String startMode_;
     private boolean isRunning_ = false;
     private boolean isServiceBound_ = false;
+    private boolean pendingGainFocus_ = false;
+    private boolean pendingStart_ = false;
 
     private static boolean isActive_;
 
@@ -79,6 +81,9 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
             Bundle b = getIntent().getExtras();
             startMode_ = b == null ? null : b.getString("mode");
         }
+        if (startMode_ == null) {
+            startMode_ = ConnectionManager.instance().mode();
+        }
 
         if (Log.isDebug()) Log.d(TAG, "start mode: " + startMode_);
 
@@ -94,13 +99,28 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
 
         surfaceView_ = findViewById(R.id.surfaceView);
         statsView_ = findViewById(R.id.videoStats);
+        surfaceView_.getHolder().addCallback(this);
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (startMode_ == null) {
-            if (Log.isDebug()) Log.d(TAG, "startMode_");
+        setIntent(intent);
+        Bundle b = intent != null ? intent.getExtras() : null;
+        String requestedMode = b != null ? b.getString("mode") : null;
+        if (requestedMode != null) {
+            startMode_ = requestedMode;
+            isRunning_ = false;
+            pendingGainFocus_ = false;
+            pendingStart_ = false;
+            HondaConnectManager hondaManager = hondaManager();
+            if (hondaManager != null) {
+                hondaManager.initialize();
+            }
+            if (Log.isDebug()) Log.d(TAG, "onNewIntent starting mode: " + startMode_);
+        } else if (startMode_ == null) {
+            startMode_ = ConnectionManager.instance().mode();
+            if (Log.isDebug()) Log.d(TAG, "onNewIntent resolved startMode_: " + startMode_);
         }
     }
 
@@ -181,6 +201,8 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
             clockHiddenBy_.setFullScreenClockVisible(true);
             clockHiddenBy_ = null;
         }
+        pendingGainFocus_ = false;
+        pendingStart_ = false;
         if (odaService_ != null) {
             odaService_.releaseFocus();
         }
@@ -202,7 +224,7 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         // The projection exit must always return to the dashboard cleanly.  A
         // floating badge here can reopen a half-torn-down PlayerActivity and
         // create a second Android Auto session.
-        if (AppBadge.instance() != null) {
+        if (!isFinishing() && isRunning_ && AppBadge.instance() != null) {
             AppBadge.instance().show();
         }
 
@@ -257,7 +279,19 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
     }
 
     @Override
-    public void surfaceCreated(SurfaceHolder holder) {}
+    public void surfaceCreated(SurfaceHolder holder) {
+        if (Log.isDebug()) Log.d(TAG, "surfaceCreated");
+        if (odaService_ == null) {
+            return;
+        }
+        if (pendingGainFocus_ && isRunning_) {
+            pendingGainFocus_ = false;
+            odaService_.gainFocus();
+        } else if (pendingStart_ && !isRunning_) {
+            pendingStart_ = false;
+            start();
+        }
+    }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
@@ -265,6 +299,8 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         if (Log.isDebug()) Log.d(TAG, "surfaceDestroyed");
+        pendingGainFocus_ = false;
+        pendingStart_ = false;
         if (odaService_ != null) {
             odaService_.releaseFocus();
         }
@@ -278,11 +314,56 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
 
         isServiceBound_ = true;
 
-        if (isRunning_){
+        if (isRunning_) {
+            if (!odaService_.isSessionActive()) {
+                // Session ended or failed while PlayerActivity was paused and its receiver
+                // was unregistered: return cleanly to MainActivity instead of showing a black screen.
+                if (Log.isWarn()) Log.w(TAG, "session ended while paused; finishing PlayerActivity");
+                isRunning_ = false;
+                pendingGainFocus_ = false;
+                pendingStart_ = false;
+                finish();
+                return;
+            }
+            if (startMode_ == null) {
+                startMode_ = odaService_.currentMode();
+            }
+            gainFocusWhenSurfaceReady();
+        } else if (odaService_.isSessionActive()) {
+            isRunning_ = true;
+            if (startMode_ == null) {
+                startMode_ = odaService_.currentMode();
+            }
+            gainFocusWhenSurfaceReady();
+        } else {
+            startWhenSurfaceReady();
+        }
+    }
+
+    private void gainFocusWhenSurfaceReady() {
+        if (isSurfaceValid()) {
+            pendingGainFocus_ = false;
             odaService_.gainFocus();
         } else {
-            start();
+            pendingGainFocus_ = true;
         }
+    }
+
+    private void startWhenSurfaceReady() {
+        if (isSurfaceValid()) {
+            pendingStart_ = false;
+            start();
+        } else {
+            pendingStart_ = true;
+        }
+    }
+
+    private boolean isSurfaceValid() {
+        if (odaService_ == null || surfaceView_ == null || surfaceView_.getHolder() == null) {
+            return false;
+        }
+        android.view.Surface surface = surfaceView_.getHolder().getSurface();
+        return surface != null && surface.isValid();
     }
 
     /**

@@ -58,14 +58,24 @@ public class OMXVideoCodec {
     }
 
     public void setSurface(Surface surface, int width, int height){
-        surfaceView_ = surface;
-        width_ = width;
-        height_ = height;
-        nativeSurfaceInit (surface, height_, width_);
+        synchronized (codecLock_) {
+            if (handle_ == 0) {
+                return;
+            }
+            surfaceView_ = surface;
+            width_ = width;
+            height_ = height;
+            nativeSurfaceInit(surface, height_, width_);
+        }
     }
 
     public boolean init() {
-        return nativeDecoderInit(fps_, options_);
+        synchronized (codecLock_) {
+            if (handle_ == 0) {
+                return false;
+            }
+            return nativeDecoderInit(fps_, options_);
+        }
     }
 
     /**

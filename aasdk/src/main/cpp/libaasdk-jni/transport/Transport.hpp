@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <list>
 #include <queue>
 #include <boost/asio.hpp>
@@ -39,7 +40,7 @@ protected:
     io::strand sendStrand_;
     SendQueue sendQueue_;
 
-    bool isStopping_;
+    std::atomic<bool> isStopping_;
 };
 
 }

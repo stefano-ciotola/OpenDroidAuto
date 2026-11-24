@@ -16,6 +16,7 @@ public class OMXVideoOutput extends VideoOutput /*implements Runnable*/ {
     // session teardown on another thread, so every field they share has to be
     // published safely - otherwise the writer can still see running_ == true and
     // reach into a codec that has already been shut down.
+    private final Object lifecycleLock_ = new Object();
     private volatile OMXVideoCodec videoCodec_;
 
     private int frameSize_;
@@ -51,15 +52,34 @@ public class OMXVideoOutput extends VideoOutput /*implements Runnable*/ {
     @Keep
     @Override
     public boolean init() {
-        int options = decoderOptions();
-        if (Log.isInfo()) Log.i(TAG, "decoder options 0x" + Integer.toHexString(options));
-        videoCodec_ = new OMXVideoCodec(fps_, options);
-        videoCodec_.setSurface(surfaceView_.getHolder().getSurface(), surfaceView_.getWidth(), surfaceView_.getHeight());
-        videoCodec_.init();
-        configured_ = true;
-        running_ = true;
-        setActive(this);
-        return true;
+        synchronized (lifecycleLock_) {
+            if (surfaceView_ == null || surfaceView_.getHolder() == null) {
+                if (Log.isWarn()) Log.w(TAG, "init skipped: surfaceView holder unavailable");
+                return false;
+            }
+            android.view.Surface surface = surfaceView_.getHolder().getSurface();
+            if (surface == null || !surface.isValid()) {
+                if (Log.isWarn()) Log.w(TAG, "init skipped: surface is not valid");
+                return false;
+            }
+            if (running_ || videoCodec_ != null) {
+                stop();
+            }
+            int options = decoderOptions();
+            if (Log.isInfo()) Log.i(TAG, "decoder options 0x" + Integer.toHexString(options));
+            OMXVideoCodec codec = new OMXVideoCodec(fps_, options);
+            codec.setSurface(surface, surfaceView_.getWidth(), surfaceView_.getHeight());
+            if (!codec.init()) {
+                Log.e(TAG, "OMXVideoCodec init failed");
+                codec.shutdown();
+                return false;
+            }
+            videoCodec_ = codec;
+            configured_ = true;
+            running_ = true;
+            setActive(this);
+            return true;
+        }
     }
 
     private int decoderOptions() {
@@ -101,17 +121,19 @@ public class OMXVideoOutput extends VideoOutput /*implements Runnable*/ {
     @Keep
     @Override
     public void stop() {
-        if(Log.isInfo()) Log.i(TAG, "stop");
-        clearActive(this);
-        if (running_) {
-            running_ = false;
-            configured_ = false;
-            OMXVideoCodec videoCodec = videoCodec_;
-            videoCodec_ = null;
-            if (videoCodec != null) {
-                videoCodec.shutdown();
+        synchronized (lifecycleLock_) {
+            if(Log.isInfo()) Log.i(TAG, "stop");
+            clearActive(this);
+            if (running_ || videoCodec_ != null) {
+                running_ = false;
+                configured_ = false;
+                OMXVideoCodec videoCodec = videoCodec_;
+                videoCodec_ = null;
+                if (videoCodec != null) {
+                    videoCodec.shutdown();
+                }
+                if(Log.isInfo()) Log.i(TAG, "deleted");
             }
-            if(Log.isInfo()) Log.i(TAG, "deleted");
         }
     }
 

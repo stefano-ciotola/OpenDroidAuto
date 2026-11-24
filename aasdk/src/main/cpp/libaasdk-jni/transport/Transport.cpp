@@ -19,6 +19,12 @@ void Transport::receive(size_t size, ReceivePromise::Pointer promise) {
     }
 
     receiveStrand_->dispatch([this, self = this->shared_from_this(), size, promise = std::move(promise)]() mutable {
+        if (isStopping_) {
+            if (promise) {
+                promise->reject(error::Error(error::ErrorCode::OPERATION_ABORTED));
+            }
+            return;
+        }
         if (Log::isVerbose()) Log_v("receive");
         receiveQueue_.emplace_back(std::make_pair(size, std::move(promise)));
 
@@ -33,6 +39,9 @@ void Transport::receive(size_t size, ReceivePromise::Pointer promise) {
 }
 
 void Transport::receiveHandler(size_t bytesTransferred) {
+    if (isStopping_) {
+        return;
+    }
     try {
         receivedDataSink_.commit(bytesTransferred);
 
@@ -77,6 +86,12 @@ void Transport::send(common::Data data, SendPromise::Pointer promise)
     }
 
     sendStrand_->dispatch([this, self = this->shared_from_this(), data = std::move(data), promise = std::move(promise)]() mutable {
+        if (isStopping_) {
+            if (promise) {
+                promise->reject(error::Error(error::ErrorCode::OPERATION_ABORTED));
+            }
+            return;
+        }
         if (Log::isVerbose()) Log_v("send");
         sendQueue_.emplace_back(std::make_pair(std::move(data), std::move(promise)));
 
