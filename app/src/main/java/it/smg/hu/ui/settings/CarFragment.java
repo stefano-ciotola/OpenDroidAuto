@@ -47,6 +47,9 @@ public class CarFragment extends BaseSettingsFragment {
         CheckBox hideClock = view.findViewById(R.id.hide_clock);
         initCheckBox(hideClock, settings.car, Settings.Car.CAR_SETTINGS_HIDE_CLOCK, Settings.Car.CAR_SETTINGS_HIDE_CLOCK_DEFAULT_VALUE);
 
+        CheckBox hideHeadUnitClock = view.findViewById(R.id.hide_hu_clock);
+        initCheckBox(hideHeadUnitClock, settings.car, Settings.Car.CAR_SETTINGS_HIDE_HU_CLOCK, Settings.Car.CAR_SETTINGS_HIDE_HU_CLOCK_DEFAULT_VALUE);
+
         CheckBox leftDrive = view.findViewById(R.id.left_drive);
         initCheckBox(leftDrive, settings.car, Settings.Car.CAR_SETTINGS_LEFT_HAND_DRIVE, Settings.Car.CAR_SETTINGS_LEFT_HAND_DRIVE_DEFAULT_VALUE);
 

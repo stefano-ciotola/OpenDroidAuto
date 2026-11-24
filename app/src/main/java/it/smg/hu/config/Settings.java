@@ -57,6 +57,7 @@ public class Settings {
         public final static String CAR_SETTINGS_SW_BUILD = "sw_build";
         public final static String CAR_SETTINGS_PLAY_MEDIA_DURING_VR = "play_media_during_vr";
         public final static String CAR_SETTINGS_HIDE_CLOCK = "hide_clock";
+        public final static String CAR_SETTINGS_HIDE_HU_CLOCK = "hide_hu_clock";
         public final static String CAR_SETTINGS_LEFT_HAND_DRIVE = "left_drive";
 
         public final static String CAR_SETTINGS_HU_NAME_DEFAULT_VALUE = "Google";
@@ -68,6 +69,7 @@ public class Settings {
         public final static String CAR_SETTINGS_SW_BUILD_DEFAULT_VALUE = "1";
         public final static boolean CAR_SETTINGS_PLAY_MEDIA_DURING_VR_DEFAULT_VALUE = false;
         public final static boolean CAR_SETTINGS_HIDE_CLOCK_DEFAULT_VALUE = false;
+        public final static boolean CAR_SETTINGS_HIDE_HU_CLOCK_DEFAULT_VALUE = false;
         public final static boolean CAR_SETTINGS_LEFT_HAND_DRIVE_DEFAULT_VALUE = true;
 
         @Keep
@@ -149,6 +151,15 @@ public class Settings {
 
         public void hideClock(boolean value){
             set(CAR_SETTINGS_HIDE_CLOCK, value);
+        }
+
+        /** Hide the clock the head unit draws over full-screen apps while projecting. */
+        public boolean hideHeadUnitClock() {
+            return get(CAR_SETTINGS_HIDE_HU_CLOCK, CAR_SETTINGS_HIDE_HU_CLOCK_DEFAULT_VALUE);
+        }
+
+        public void hideHeadUnitClock(boolean value){
+            set(CAR_SETTINGS_HIDE_HU_CLOCK, value);
         }
 
         @Keep

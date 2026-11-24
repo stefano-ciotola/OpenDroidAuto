@@ -164,6 +164,15 @@
         android:text="@string/car_settings_hide_clock" />
 
     <CheckBox
+        android:id="@+id/hide_hu_clock"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_gravity="left"
+        android:layout_marginTop="6dp"
+        android:textColor="@color/settings_text_primary"
+        android:text="@string/car_settings_hide_hu_clock" />
+
+    <CheckBox
         android:id="@+id/left_drive"
         android:layout_width="match_parent"
         android:layout_height="52dp"

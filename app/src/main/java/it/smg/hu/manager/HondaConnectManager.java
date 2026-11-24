@@ -399,6 +399,27 @@ public class HondaConnectManager {
         }
     }
 
+    /**
+     * Shows or hides the clock that the Honda status bar service draws over
+     * full-screen apps. StatusBarExManager.setFullScreenClockDisplay() is part
+     * of the head unit framework; the call is guarded because other or older
+     * firmware may not provide it.
+     */
+    public void setFullScreenClockVisible(boolean visible){
+        if (statusBarExManager_ == null) {
+            if (Log.isWarn()) Log.w(TAG, "setFullScreenClockVisible: no status bar service");
+            return;
+        }
+        try {
+            int ret = statusBarExManager_.setFullScreenClockDisplay(visible);
+            if (Log.isInfo()) Log.i(TAG, "setFullScreenClockDisplay(" + visible + ") ret= " + ret);
+        } catch (Throwable t) {
+            // NoSuchMethodError on firmware without the call, RuntimeException
+            // from a service that refuses it: either way keep the session going.
+            Log.w(TAG, "setFullScreenClockDisplay not available", t);
+        }
+    }
+
     // Used in onPause (app in background)
     public void sendToBackground(){
         if (Log.isDebug()) Log.d(TAG, "sendToBackground -> app with auth " + authType() + " unregister SW callback");

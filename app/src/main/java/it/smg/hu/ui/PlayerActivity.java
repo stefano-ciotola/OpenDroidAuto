@@ -56,6 +56,9 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         }
     };
 
+    // The Honda clock was hidden by onResume and must be restored in onPause.
+    private HondaConnectManager clockHiddenBy_;
+
     private String startMode_;
     private boolean isRunning_ = false;
     private boolean isServiceBound_ = false;
@@ -144,6 +147,10 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         HondaConnectManager hondaManager = hondaManager();
         if (hondaManager != null){
             hondaManager.initAudioBinding();
+            if (Settings.instance().car.hideHeadUnitClock()) {
+                hondaManager.setFullScreenClockVisible(false);
+                clockHiddenBy_ = hondaManager;
+            }
         }
 
         if (NotificationFactory.instance() != null) {
@@ -170,6 +177,10 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         if (Log.isDebug()) Log.d(TAG, "onPause");
         super.onPause();
         statsHandler_.removeCallbacks(statsTick_);
+        if (clockHiddenBy_ != null) {
+            clockHiddenBy_.setFullScreenClockVisible(true);
+            clockHiddenBy_ = null;
+        }
         if (odaService_ != null) {
             odaService_.releaseFocus();
         }

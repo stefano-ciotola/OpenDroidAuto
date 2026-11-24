@@ -72,7 +72,8 @@
 	<string name="car_settings_sw_build">SW Build</string>
 	<string name="car_settings_sw_version">SW Version</string>
 	<string name="car_settings_play_media_during_vr">Play Native Media During VR</string>
-	<string name="car_settings_hide_clock">Hide Clock</string>
+	<string name="car_settings_hide_clock">Hide the Android Auto clock</string>
+	<string name="car_settings_hide_hu_clock">Hide the head unit clock during Android Auto (Honda Connect)</string>
 	<string name="car_settings_left_drive">Left Drive</string>
 	<string name="car_settings_aa_wifi">Use Android Auto Wireless</string>
 

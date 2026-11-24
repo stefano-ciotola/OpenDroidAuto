@@ -96,7 +96,8 @@
     <string name="car_settings_sw_build">Compilação do sistema</string>
     <string name="car_settings_sw_version">Versão do sistema</string>
     <string name="car_settings_play_media_during_vr">Reproduzir mídia durante comando de voz</string>
-    <string name="car_settings_hide_clock">Ocultar relógio</string>
+    <string name="car_settings_hide_clock">Ocultar o relógio do Android Auto</string>
+    <string name="car_settings_hide_hu_clock">Ocultar o relógio da central durante o Android Auto (Honda Connect)</string>
     <string name="car_settings_left_drive">Volante à esquerda</string>
     <string name="car_settings_aa_wifi">Usar Android Auto sem fio</string>
     <string name="video_settings_sw_dec">Usar decodificador por software (pode ficar lento)</string>
