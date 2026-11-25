@@ -4,7 +4,11 @@
 #include "DecoderOptions.h"
 #include "OMXSource.h"
 #include "OMXDecoder.h"
+#include <cstddef>
+#include <cstdint>
+#include <string>
 #include <thread>
+#include <vector>
 #include <android/looper.h>
 
 struct ScreenSize {
@@ -31,6 +35,9 @@ public:
     ~OMXVideoCodec();
 private:
     void init_omxDecoderThread();
+    // Applies the low-latency SPS rewrite when it is enabled and reports the
+    // stream parameters; true when patched holds the buffer to decode.
+    bool rewriteSps(const uint8_t* data, std::size_t size, std::vector<uint8_t>* patched);
 
     OMXSource::Pointer omxSource_;
     OMXDecoder::Pointer omxDecoder_;
@@ -47,4 +54,5 @@ private:
     int fps_;
     DecoderOptions options_;
     bool statsStarted_;
+    std::string streamSummary_;
 };

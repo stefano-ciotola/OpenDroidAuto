@@ -368,11 +368,28 @@ void VideoStats::resetLocked() {
     fedTotal_ = 0;
     decodedTotal_ = 0;
     droppedTotal_ = 0;
+    keyFrames_ = 0;
+    lastKeyFrameBytes_ = 0;
+    streamSummary_.clear();
 }
 
 void VideoStats::setDecoderSummary(const std::string& summary) {
     std::lock_guard<std::mutex> lock(mutex_);
     decoderSummary_ = summary;
+}
+
+void VideoStats::setStreamSummary(const std::string& summary) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    streamSummary_ = summary;
+}
+
+void VideoStats::onKeyFrame(size_t bytes) {
+    if (!enabled()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    ++keyFrames_;
+    lastKeyFrameBytes_ = bytes;
 }
 
 void VideoStats::onReceived(size_t bytes, int64_t timestampUs) {
@@ -483,14 +500,20 @@ void VideoStats::run() {
         size_t queueLength;
         int64_t decoderDepth;
         uint64_t droppedTotal;
+        uint64_t keyFrames;
+        size_t lastKeyFrameBytes;
         std::string summary;
+        std::string stream;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             window = window_;
             queueLength = queueLength_;
             decoderDepth = std::max<int64_t>(0, static_cast<int64_t>(fedTotal_) - static_cast<int64_t>(decodedTotal_));
             droppedTotal = droppedTotal_;
+            keyFrames = keyFrames_;
+            lastKeyFrameBytes = lastKeyFrameBytes_;
             summary = decoderSummary_;
+            stream = streamSummary_;
             // A frame that has been waiting since the last arrival is a gap too:
             // it is what a frozen picture looks like.
             if (lastArrivalNs_ != 0) {
@@ -535,6 +558,11 @@ void VideoStats::run() {
         if (!summary.empty()) {
             report += "\n" + summary;
         }
+        char keyFrameText[48];
+        snprintf(keyFrameText, sizeof(keyFrameText), " | IDR %llu last %u KB",
+                 static_cast<unsigned long long>(keyFrames),
+                 static_cast<unsigned>((lastKeyFrameBytes + 512) / 1024));
+        report += "\n" + (stream.empty() ? std::string("SPS -") : stream) + keyFrameText;
 
         if (Log::isInfo()) {
             // One logcat line per report, easy to grep for "RX ".

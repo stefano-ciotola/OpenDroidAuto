@@ -93,6 +93,9 @@ public class OMXVideoOutput extends VideoOutput /*implements Runnable*/ {
         if (settings_.video.decoderLegacyDrop()) {
             options |= OMXVideoCodec.OPTION_LEGACY_DROP;
         }
+        if (settings_.video.decoderSpsLowLatency()) {
+            options |= OMXVideoCodec.OPTION_SPS_LOW_LATENCY;
+        }
         if (settings_.video.statsOverlay()) {
             options |= OMXVideoCodec.OPTION_STATS;
         }

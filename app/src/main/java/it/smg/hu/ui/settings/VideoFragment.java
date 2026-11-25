@@ -108,6 +108,9 @@ public class VideoFragment extends BaseSettingsFragment {
         CheckBox decoderOneInput = view.findViewById(R.id.videoDecoderOneInput);
         initCheckBox(decoderOneInput, settings.video, Settings.Video.VIDEO_DECODER_ONE_INPUT, Settings.Video.VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE);
 
+        CheckBox decoderSpsLowLatency = view.findViewById(R.id.videoDecoderSpsLowLatency);
+        initCheckBox(decoderSpsLowLatency, settings.video, Settings.Video.VIDEO_DECODER_SPS_LOW_LATENCY, Settings.Video.VIDEO_DECODER_SPS_LOW_LATENCY_DEFAULT_VALUE);
+
         CheckBox decoderNvidiaLowLatency = view.findViewById(R.id.videoDecoderNvidiaLowLatency);
         initCheckBox(decoderNvidiaLowLatency, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_LATENCY, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE);
 

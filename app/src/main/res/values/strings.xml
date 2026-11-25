@@ -100,6 +100,7 @@
 	<string name="video_stats_overlay">Show video statistics over the projection</string>
 	<string name="video_decoder_one_input">Feed the decoder one frame at a time (lower latency)</string>
 	<string name="video_decoder_nvidia_low_latency">Nvidia low-latency decoding (when the decoder supports it)</string>
+	<string name="video_decoder_sps_low_latency">Show each frame as soon as it is decoded (SPS patch)</string>
 	<string name="video_decoder_legacy_drop">Drop late frames and wait for a key frame (previous behaviour)</string>
 	<string name="video_stats_waiting">Video statistics: waiting for the first report…</string>
 

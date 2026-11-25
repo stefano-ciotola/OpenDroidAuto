@@ -21,6 +21,8 @@ public class OMXVideoCodec {
     public static final int OPTION_LEGACY_DROP = 1 << 2;
     /** Collect per-stage statistics, see {@link #statsReport()}. */
     public static final int OPTION_STATS = 1 << 3;
+    /** Rewrite the stream's SPS so the decoder shows each frame as soon as it is decoded. */
+    public static final int OPTION_SPS_LOW_LATENCY = 1 << 4;
 
     private static native void nativeInit();
     private native long nativeSetup();

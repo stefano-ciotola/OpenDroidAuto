@@ -99,6 +99,7 @@
 	<string name="video_stats_overlay">Mostra le statistiche video sopra la proiezione</string>
 	<string name="video_decoder_one_input">Passa al decoder un fotogramma alla volta (meno latenza)</string>
 	<string name="video_decoder_nvidia_low_latency">Decodifica Nvidia a bassa latenza (se il decoder la supporta)</string>
+	<string name="video_decoder_sps_low_latency">Mostra ogni fotogramma appena decodificato (patch SPS)</string>
 	<string name="video_decoder_legacy_drop">Scarta i fotogrammi in ritardo e attendi un fotogramma chiave (comportamento precedente)</string>
 	<string name="video_stats_waiting">Statistiche video: in attesa del primo rapporto…</string>
 

@@ -10,6 +10,7 @@ LOCAL_SRC_FILES := OMXVideoCodec.cpp \
                    VideoStats.cpp \
                    OMXDecoder.cpp \
                    OMXSource.cpp \
+                   SpsPatcher.cpp \
                    it_smg_libs_videocodec_OMXVideoCodec.cpp
 
 

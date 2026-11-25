@@ -28,6 +28,8 @@ public:
 
     // One line describing the active decoder options; shown with every report.
     void setDecoderSummary(const std::string& summary);
+    // One line describing the stream (SPS) and what the decoder made of it.
+    void setStreamSummary(const std::string& summary);
 
     // Hot-path hooks.
     void onReceived(size_t bytes, int64_t timestampUs);
@@ -36,6 +38,7 @@ public:
     void onFed(bool hasSlice);
     void onDecoded();
     void onRendered(int64_t timestampUs);
+    void onKeyFrame(size_t bytes);
 
     // Latest report, empty until the first window has closed. Any thread.
     std::string lastReport();
@@ -82,7 +85,10 @@ private:
     uint64_t fedTotal_ = 0;
     uint64_t decodedTotal_ = 0;
     uint64_t droppedTotal_ = 0;
+    uint64_t keyFrames_ = 0;
+    size_t lastKeyFrameBytes_ = 0;
     std::string decoderSummary_;
+    std::string streamSummary_;
 
     std::mutex reportMutex_;
     std::string lastReport_;

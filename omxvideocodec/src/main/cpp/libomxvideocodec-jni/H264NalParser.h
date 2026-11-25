@@ -7,6 +7,7 @@ namespace h264 {
 
 struct NalInfo {
     bool hasCodecConfig = false;
+    bool hasSps = false;
     bool hasIdr = false;
     // The buffer carries picture data (a coded slice), i.e. it is a frame the
     // decoder will output, as opposed to SPS/PPS/SEI only.
@@ -16,6 +17,7 @@ struct NalInfo {
 inline void addNalType(NalInfo& info, uint8_t header) {
     const uint8_t type = header & 0x1f;
     info.hasCodecConfig = info.hasCodecConfig || type == 7 || type == 8;
+    info.hasSps = info.hasSps || type == 7;
     info.hasIdr = info.hasIdr || type == 5;
     info.hasSlice = info.hasSlice || type == 1 || type == 5;
 }

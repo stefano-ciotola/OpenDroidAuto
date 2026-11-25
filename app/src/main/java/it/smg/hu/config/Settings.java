@@ -252,6 +252,7 @@ public class Settings {
         public final static String VIDEO_DECODER_ONE_INPUT = "video_decoder_one_input";
         public final static String VIDEO_DECODER_NVIDIA_LOW_LATENCY = "video_decoder_nvidia_low_latency";
         public final static String VIDEO_DECODER_LEGACY_DROP = "video_decoder_legacy_drop";
+        public final static String VIDEO_DECODER_SPS_LOW_LATENCY = "video_decoder_sps_low_latency";
 
         public final static int VIDEO_RESOLUTION_DEFAULT_VALUE = 1; // 480p
         public final static int VIDEO_FPS_DEFAULT_VALUE = 1; // 30 fps
@@ -268,6 +269,9 @@ public class Settings {
         public final static boolean VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE = true;
         public final static boolean VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE = true;
         public final static boolean VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE = false;
+        // Declares "no frame reordering" in the SPS so the Tegra decoder stops
+        // holding 4-5 decoded frames back before showing them.
+        public final static boolean VIDEO_DECODER_SPS_LOW_LATENCY_DEFAULT_VALUE = true;
 
         public int resolution(){
             return SP.getInt(VIDEO_RESOLUTION,VIDEO_RESOLUTION_DEFAULT_VALUE);
@@ -351,6 +355,13 @@ public class Settings {
         }
         public void decoderLegacyDrop(boolean value){
             set(VIDEO_DECODER_LEGACY_DROP, value);
+        }
+
+        public boolean decoderSpsLowLatency() {
+            return get(VIDEO_DECODER_SPS_LOW_LATENCY, VIDEO_DECODER_SPS_LOW_LATENCY_DEFAULT_VALUE);
+        }
+        public void decoderSpsLowLatency(boolean value){
+            set(VIDEO_DECODER_SPS_LOW_LATENCY, value);
         }
     }
 
