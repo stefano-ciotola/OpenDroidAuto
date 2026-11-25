@@ -219,7 +219,9 @@ public class HondaConnectManager {
         }
 
         try {
-            pControl_ = IWhiteList.getProcessControl("it.smg.hu", null);
+            // Keyed by package: a build with another applicationId has its own
+            // Honda Permissions entry (and Honda enforces that one).
+            pControl_ = IWhiteList.getProcessControl(context_.getPackageName(), null);
             if (pControl_ != null) {
                 if (Log.isDebug()) {
                     Log.d(TAG, "ProcessControl [ ");
