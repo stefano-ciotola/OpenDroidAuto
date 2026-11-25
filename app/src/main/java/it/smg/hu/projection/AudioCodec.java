@@ -3,6 +3,7 @@ package it.smg.hu.projection;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.os.Process;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -135,6 +136,13 @@ public class AudioCodec implements IAudioCodec, Runnable {
         // a playback thread that outlived its stop() (the join below is bounded)
         // could release the track a freshly started thread was already writing to.
         final Thread self = Thread.currentThread();
+        // Feeding the AudioTrack late is an audible gap; run like the
+        // framework's own audio threads (from josepabulo/OpenDroidAuto).
+        try {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
+        } catch (RuntimeException e) {
+            if (Log.isWarn()) Log.w(TAG, "audio thread priority not changed", e);
+        }
         AudioTrack audioTrack;
         try {
             int bufferSize = AudioTrack.getMinBufferSize(sampleRate_, channels2num(channelConfig_), sampleSizeFromInt(sampleSize_));

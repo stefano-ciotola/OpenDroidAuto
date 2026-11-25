@@ -4,6 +4,15 @@
 #include "Backtrace.h"
 #include <string>
 #include <sys/prctl.h>
+#include <sys/resource.h>
+#include <unistd.h>
+
+namespace {
+// ANDROID_PRIORITY_URGENT_DISPLAY. Every video and audio message passes
+// through these threads; they mostly wait, but should not queue behind
+// ordinary app threads when data arrives.
+constexpr int kIoThreadPriority = -8;
+}
 
 jfieldID JRuntime::handleId = nullptr;
 JRuntime::Pointer JRuntime::instance_ = nullptr;
@@ -89,6 +98,9 @@ void JRuntime::startIOServiceWorkers(int threads) {
         // shows which worker is busy.
         const std::string name = "ODA-IO-" + std::to_string(index);
         prctl(PR_SET_NAME, name.c_str(), 0, 0, 0);
+        if (setpriority(PRIO_PROCESS, gettid(), kIoThreadPriority) != 0 && Log::isInfo()) {
+            Log_i("%s: could not raise thread priority", name.c_str());
+        }
 
         {
             std::unique_lock<std::mutex> lock(m);
