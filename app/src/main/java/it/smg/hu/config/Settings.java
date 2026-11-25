@@ -57,6 +57,7 @@ public class Settings {
         public final static String CAR_SETTINGS_SW_BUILD = "sw_build";
         public final static String CAR_SETTINGS_PLAY_MEDIA_DURING_VR = "play_media_during_vr";
         public final static String CAR_SETTINGS_HIDE_CLOCK = "hide_clock";
+        public final static String CAR_SETTINGS_HIDE_HU_CLOCK = "hide_hu_clock";
         public final static String CAR_SETTINGS_LEFT_HAND_DRIVE = "left_drive";
 
         public final static String CAR_SETTINGS_HU_NAME_DEFAULT_VALUE = "Google";
@@ -68,6 +69,7 @@ public class Settings {
         public final static String CAR_SETTINGS_SW_BUILD_DEFAULT_VALUE = "1";
         public final static boolean CAR_SETTINGS_PLAY_MEDIA_DURING_VR_DEFAULT_VALUE = false;
         public final static boolean CAR_SETTINGS_HIDE_CLOCK_DEFAULT_VALUE = false;
+        public final static boolean CAR_SETTINGS_HIDE_HU_CLOCK_DEFAULT_VALUE = false;
         public final static boolean CAR_SETTINGS_LEFT_HAND_DRIVE_DEFAULT_VALUE = true;
 
         @Keep
@@ -149,6 +151,15 @@ public class Settings {
 
         public void hideClock(boolean value){
             set(CAR_SETTINGS_HIDE_CLOCK, value);
+        }
+
+        /** Hide the clock the head unit draws over full-screen apps while projecting. */
+        public boolean hideHeadUnitClock() {
+            return get(CAR_SETTINGS_HIDE_HU_CLOCK, CAR_SETTINGS_HIDE_HU_CLOCK_DEFAULT_VALUE);
+        }
+
+        public void hideHeadUnitClock(boolean value){
+            set(CAR_SETTINGS_HIDE_HU_CLOCK, value);
         }
 
         @Keep
@@ -237,6 +248,10 @@ public class Settings {
         public final static String VIDEO_SHOW_MEDIA_NOTIFICATION = "video_show_media_notification";
         public final static String VIDEO_SHOW_NAVIGATION_NOTIFICATION = "video_show_navigation_notification";
         public final static String VIDEO_SHOW_APP_BADGE = "video_show_app_badge";
+        public final static String VIDEO_STATS_OVERLAY = "video_stats_overlay";
+        public final static String VIDEO_DECODER_ONE_INPUT = "video_decoder_one_input";
+        public final static String VIDEO_DECODER_NVIDIA_LOW_LATENCY = "video_decoder_nvidia_low_latency";
+        public final static String VIDEO_DECODER_LEGACY_DROP = "video_decoder_legacy_drop";
 
         public final static int VIDEO_RESOLUTION_DEFAULT_VALUE = 1; // 480p
         public final static int VIDEO_FPS_DEFAULT_VALUE = 1; // 30 fps
@@ -246,6 +261,13 @@ public class Settings {
         public final static boolean VIDEO_SHOW_MEDIA_NOTIFICATION_DEFAULT_VALUE = true;
         public final static boolean VIDEO_SHOW_NAVIGATION_NOTIFICATION_DEFAULT_VALUE = true;
         public final static boolean VIDEO_SHOW_APP_BADGE_DEFAULT_VALUE = true;
+        // Diagnostics and experimental decoder switches (OMX decoder, Android 4.0.x).
+        // The two low-latency switches are harmless where unsupported: the
+        // Nvidia parameters are only set when the decoder knows them.
+        public final static boolean VIDEO_STATS_OVERLAY_DEFAULT_VALUE = false;
+        public final static boolean VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE = true;
+        public final static boolean VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE = true;
+        public final static boolean VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE = false;
 
         public int resolution(){
             return SP.getInt(VIDEO_RESOLUTION,VIDEO_RESOLUTION_DEFAULT_VALUE);
@@ -301,6 +323,34 @@ public class Settings {
         }
         public void showAppBadge(boolean value){
             set(VIDEO_SHOW_APP_BADGE, value);
+        }
+
+        public boolean statsOverlay() {
+            return get(VIDEO_STATS_OVERLAY, VIDEO_STATS_OVERLAY_DEFAULT_VALUE);
+        }
+        public void statsOverlay(boolean value){
+            set(VIDEO_STATS_OVERLAY, value);
+        }
+
+        public boolean decoderOneInput() {
+            return get(VIDEO_DECODER_ONE_INPUT, VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE);
+        }
+        public void decoderOneInput(boolean value){
+            set(VIDEO_DECODER_ONE_INPUT, value);
+        }
+
+        public boolean decoderNvidiaLowLatency() {
+            return get(VIDEO_DECODER_NVIDIA_LOW_LATENCY, VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE);
+        }
+        public void decoderNvidiaLowLatency(boolean value){
+            set(VIDEO_DECODER_NVIDIA_LOW_LATENCY, value);
+        }
+
+        public boolean decoderLegacyDrop() {
+            return get(VIDEO_DECODER_LEGACY_DROP, VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE);
+        }
+        public void decoderLegacyDrop(boolean value){
+            set(VIDEO_DECODER_LEGACY_DROP, value);
         }
     }
 
@@ -506,7 +556,7 @@ public class Settings {
         public final static String ADVANCED_SW_IDX = "steeringwheelidx";
 
         public final static boolean ADVANCED_ENABLED_DEBUG_DEFAULT_VALUE = false;
-        public final static String ADVANCED_LOG_DIR_DEFAULT_VALUE = "/mnt/sdcard/usbdrive2/ODA/";
+        public final static String ADVANCED_LOG_DIR_DEFAULT_VALUE = "/mnt/sdcard/usbdrive2/ODA-fork/";
         public final static boolean ADVANCED_ENABLE_WIFI_DEFAULT_VALUE = false;
         public final static int ADVANCED_LOG_LEVEL_DEFAULT_VALUE = ILog.DEFAULT_LOG_LEVEL;
         public final static boolean ADVANCED_LOG_PROTOCOL_DEFAULT_VALUE = false;
@@ -638,7 +688,18 @@ public class Settings {
 
     public class Appearance extends Base {
         public static final String DARK_THEME = "darkTheme";
-        public static final boolean DARK_THEME_DEFAULT_VALUE = false;
+        public static final boolean DARK_THEME_DEFAULT_VALUE = true;
+        /** App language: "it", "en", "pt" or AppLocale.SYSTEM. */
+        public static final String LANGUAGE = "language";
+        public static final String LANGUAGE_DEFAULT_VALUE = "it";
+
+        public String language() {
+            return get(LANGUAGE, LANGUAGE_DEFAULT_VALUE);
+        }
+
+        public void language(String value) {
+            set(LANGUAGE, value);
+        }
 
         public boolean darkTheme() {
             return get(DARK_THEME, DARK_THEME_DEFAULT_VALUE);

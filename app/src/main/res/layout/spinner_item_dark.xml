@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Selected value inside a settings spinner: transparent so the field and its
+     chevron (Ui.field) show through, with room on the right for the chevron. -->
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@android:id/text1"
     style="?android:attr/spinnerItemStyle"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@color/oda_surface_elevated"
+    android:background="@android:color/transparent"
     android:ellipsize="end"
     android:gravity="left|center_vertical"
     android:paddingLeft="12dp"
-    android:paddingRight="12dp"
+    android:paddingRight="36dp"
     android:singleLine="true"
+    android:textSize="16sp"
     android:textColor="@color/oda_text_primary" />

@@ -72,15 +72,11 @@ void JVideoService::stop() {
 }
 
 void JVideoService::releaseFocus() {
-    aasdk::proto::messages::VideoFocusRequest request;
-    request.set_focus_mode(aasdk::proto::enums::VideoFocusMode_Enum_UNFOCUSED);
-    videoService_->onVideoFocusRequest(request);
+    videoService_->releaseFocus();
 }
 
 void JVideoService::gainFocus() {
-    aasdk::proto::messages::VideoFocusRequest request;
-    request.set_focus_mode(aasdk::proto::enums::VideoFocusMode_Enum_FOCUSED);
-    videoService_->onVideoFocusRequest(request);
+    videoService_->gainFocus();
 }
 
 void JVideoService::onError(const aasdk::error::Error &e) {

@@ -8,14 +8,22 @@ namespace h264 {
 struct NalInfo {
     bool hasCodecConfig = false;
     bool hasIdr = false;
+    // The buffer carries picture data (a coded slice), i.e. it is a frame the
+    // decoder will output, as opposed to SPS/PPS/SEI only.
+    bool hasSlice = false;
 };
 
 inline void addNalType(NalInfo& info, uint8_t header) {
     const uint8_t type = header & 0x1f;
     info.hasCodecConfig = info.hasCodecConfig || type == 7 || type == 8;
     info.hasIdr = info.hasIdr || type == 5;
+    info.hasSlice = info.hasSlice || type == 1 || type == 5;
 }
 
+// Parameter sets and SEI come before the first slice of an access unit, and
+// every slice of a picture has the same NAL type, so the scan can stop at the
+// first slice header. It used to walk the whole compressed frame byte by byte,
+// under the source lock, on every frame.
 inline NalInfo inspectNalUnits(const uint8_t* data, std::size_t size) {
     NalInfo info;
     if (data == nullptr || size == 0) {
@@ -36,6 +44,9 @@ inline NalInfo inspectNalUnits(const uint8_t* data, std::size_t size) {
         if (headerOffset < size && headerOffset != 0) {
             addNalType(info, data[headerOffset]);
             foundAnnexB = true;
+            if (info.hasSlice) {
+                break;
+            }
             i = headerOffset;
         }
     }
@@ -58,6 +69,9 @@ inline NalInfo inspectNalUnits(const uint8_t* data, std::size_t size) {
 
         addNalType(info, data[offset + 4]);
         foundAvcc = true;
+        if (info.hasSlice) {
+            break;
+        }
         offset += 4 + nalSize;
     }
 

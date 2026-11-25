@@ -1,5 +1,6 @@
 #include "OMXSource.h"
 #include "H264NalParser.h"
+#include "VideoStats.h"
 #include "Log.h"
 
 #include <media/stagefright/MediaDefs.h>
@@ -12,8 +13,16 @@ using namespace android;
 
 namespace {
 
-constexpr std::size_t kMaxQueuedBuffers = 8;
-constexpr int64_t kMaxQueuedDurationUs = 250000;
+// Previous behaviour: a short backlog already counts as "the decoder is late".
+constexpr std::size_t kLegacyMaxQueuedBuffers = 8;
+constexpr int64_t kLegacyMaxQueuedDurationUs = 250000;
+
+// Without legacy dropping the queue only gives up when something is badly
+// stuck (about 3 s of video), to bound memory. Dropping P-frames breaks the
+// reference chain, so below this limit every frame is decoded.
+constexpr std::size_t kSafetyMaxQueuedBuffers = 90;
+constexpr int64_t kSafetyMaxQueuedDurationUs = 3000000;
+
 constexpr std::size_t kMaxSyncWaitBuffers = 8;
 constexpr auto kMaxSyncWait = std::chrono::milliseconds(250);
 
@@ -22,13 +31,20 @@ constexpr auto kMaxSyncWait = std::chrono::milliseconds(250);
 // https://www.programmersought.com/article/87712558400/
 // https://vec.io/posts/use-android-hardware-decoder-with-omxcodec-in-ndk
 // https://stackoverflow.com/questions/9832503/android-include-native-stagefright-features-in-my-own-project
-OMXSource::OMXSource(int width, int height, int fps):
-        format_(nullptr), quitFlag_(false), waitingForSync_(false), droppedBuffers_(0),
+OMXSource::OMXSource(int width, int height, int fps, bool legacyDrop):
+        format_(nullptr),
+        maxQueuedBuffers_(legacyDrop ? kLegacyMaxQueuedBuffers : kSafetyMaxQueuedBuffers),
+        maxQueuedDurationUs_(legacyDrop ? kLegacyMaxQueuedDurationUs : kSafetyMaxQueuedDurationUs),
+        quitFlag_(false), waitingForSync_(false), droppedBuffers_(0),
         syncWaitDroppedBuffers_(0)
 {
 
     int32_t bufferSize = (width * height * 3) / 2;
     if (Log::isVerbose()) Log_v("BufferSize: %d", bufferSize);
+    if (Log::isInfo()) Log_i("backlog limit: %d buffers / %lld us (%s)",
+                             static_cast<int>(maxQueuedBuffers_),
+                             static_cast<long long>(maxQueuedDurationUs_),
+                             legacyDrop ? "legacy drop" : "safety limit only");
 
     format_ = new MetaData();
     format_->setInt32(kKeyWidth, width);
@@ -50,6 +66,7 @@ OMXSource::~OMXSource() {
 
 void OMXSource::queueBuffer(MediaBuffer* buffer){
     if (Log::isVerbose()) Log_v("add buffer to queue");
+    VideoStats& stats = VideoStats::instance();
     std::unique_lock<std::mutex> l(mutex_);
 
     if (quitFlag_) {
@@ -66,21 +83,23 @@ void OMXSource::queueBuffer(MediaBuffer* buffer){
 
     bool durationExceeded = false;
     if (!pbuffers_.empty() && timestampUs > 0 &&
-        pbuffers_.front()->meta_data()->findInt64(kKeyTime, &oldestTimestampUs) &&
+        pbuffers_.front().buffer->meta_data()->findInt64(kKeyTime, &oldestTimestampUs) &&
         oldestTimestampUs > 0 && timestampUs > oldestTimestampUs) {
-        durationExceeded = timestampUs - oldestTimestampUs > kMaxQueuedDurationUs;
+        durationExceeded = timestampUs - oldestTimestampUs > maxQueuedDurationUs_;
     }
 
     if (!waitingForSync_ &&
-        (pbuffers_.size() >= kMaxQueuedBuffers || durationExceeded)) {
-        droppedBuffers_ += pbuffers_.size();
+        (pbuffers_.size() >= maxQueuedBuffers_ || durationExceeded)) {
+        const std::size_t flushed = pbuffers_.size();
+        droppedBuffers_ += flushed;
         clearQueuedBuffers();
+        stats.onDropped(flushed);
         waitingForSync_ = true;
         syncWaitDroppedBuffers_ = 0;
         syncWaitStarted_ = std::chrono::steady_clock::now();
         if (Log::isWarn()) {
-            Log_w("video decoder backlog exceeded %lld us; briefly waiting for an IDR frame",
-                  static_cast<long long>(kMaxQueuedDurationUs));
+            Log_w("video decoder backlog exceeded %lld us / %d buffers; briefly waiting for an IDR frame",
+                  static_cast<long long>(maxQueuedDurationUs_), static_cast<int>(maxQueuedBuffers_));
         }
     }
 
@@ -91,6 +110,7 @@ void OMXSource::queueBuffer(MediaBuffer* buffer){
             ++droppedBuffers_;
             ++syncWaitDroppedBuffers_;
             buffer->release();
+            stats.onDropped(1);
             return;
         }
 
@@ -108,7 +128,8 @@ void OMXSource::queueBuffer(MediaBuffer* buffer){
         buffer->meta_data()->setInt32(kKeyIsSyncFrame, nalInfo.hasIdr ? 1 : 0);
     }
 
-    pbuffers_.push(buffer);
+    pbuffers_.push_back(Pending{buffer, nalInfo.hasSlice});
+    stats.onQueueLength(pbuffers_.size());
 
     if (nalInfo.hasIdr && waitingForSync_) {
         waitingForSync_ = false;
@@ -128,7 +149,10 @@ sp<MetaData>  OMXSource::getFormat(){
     return format_;
 }
 
-MediaBuffer* OMXSource::nextBuffer(){
+// Blocks until a frame is available. OMXCodec calls read() from its OMX
+// callbacks, so while this waits no other callback of the codec is delivered;
+// DecoderOptions::oneInputBuffer keeps that to a single pending callback.
+bool OMXSource::nextBuffer(Pending* pending){
     if (Log::isVerbose()) Log_v("nextBuffer");
     std::unique_lock<std::mutex> l(mutex_);
 
@@ -139,23 +163,27 @@ MediaBuffer* OMXSource::nextBuffer(){
         }
 
         if (Log::isVerbose()) Log_v("buffer size %d", pbuffers_.size());
-        MediaBuffer *buffer = pbuffers_.front();
-        pbuffers_.pop();
+        *pending = pbuffers_.front();
+        pbuffers_.pop_front();
+        VideoStats::instance().onQueueLength(pbuffers_.size());
         if (Log::isVerbose()) Log_v("found buffer %d", pbuffers_.size());
-        return buffer;
+        return true;
     }
 
-    return nullptr;
+    return false;
 }
 
 status_t OMXSource::read(MediaBuffer **buffer, const MediaSource::ReadOptions *options) {
     if (Log::isVerbose()) Log_v("read");
 
-    MediaBuffer* mBuffer = nextBuffer();
-    if (!mBuffer){
+    Pending pending{nullptr, false};
+    if (!nextBuffer(&pending)){
         return ERROR_END_OF_STREAM;
     }
 
+    VideoStats::instance().onFed(pending.hasSlice);
+
+    MediaBuffer* mBuffer = pending.buffer;
     mBuffer->setObserver(this);
     mBuffer->add_ref();
     (*buffer) = mBuffer;
@@ -193,8 +221,8 @@ status_t OMXSource::stop() {
 
 void OMXSource::clearQueuedBuffers() {
     while (!pbuffers_.empty()) {
-        MediaBuffer* buffer = pbuffers_.front();
-        pbuffers_.pop();
+        MediaBuffer* buffer = pbuffers_.front().buffer;
+        pbuffers_.pop_front();
         buffer->release();
     }
 }

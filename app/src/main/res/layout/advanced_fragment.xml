@@ -1,194 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Advanced settings. Ids are the ones AdvancedFragment binds. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:layout_marginBottom="16dp"
-    android:background="@color/settings_surface"
+    android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingLeft="8dp"
-    android:paddingRight="8dp">
+    android:paddingBottom="8dp">
 
-   <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:gravity="left|center_vertical"
-        android:textColor="@color/settings_text_primary"
-        android:labelFor="@id/loglevel"
-        android:text="@string/advanced_settings_logLevel"/>
+    <TextView style="@style/SettingsSection" android:tag="section" android:layout_marginTop="4dp"
+        android:text="@string/settings_section_log" />
 
-    <Spinner
-        android:id="@+id/loglevel"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:textColor="@color/settings_text_primary"
-        android:gravity="left|center_vertical"
-        android:textAlignment="viewStart"/>
+    <LinearLayout style="@style/SettingsGroup" android:tag="group">
+        <LinearLayout style="@style/SettingsFieldRow">
+            <TextView style="@style/SettingsFieldLabel" android:tag="label" android:labelFor="@id/loglevel" android:text="@string/advanced_settings_logLevel" />
+            <Spinner android:id="@+id/loglevel" style="@style/SettingsFieldValue" />
+        </LinearLayout>
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/logProtocol" style="@style/SettingsSwitch" android:text="@string/advanced_settings_logProtocol" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/enable_debug" style="@style/SettingsSwitch" android:text="@string/advanced_settings_enabledebug" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <LinearLayout style="@style/SettingsFieldRow">
+            <TextView style="@style/SettingsFieldLabel" android:tag="label" android:labelFor="@id/log_dir" android:text="@string/advanced_settings_logDir" />
+            <EditText android:id="@+id/log_dir" style="@style/SettingsFieldValue" android:imeOptions="actionDone" android:inputType="text" android:maxLines="1" />
+        </LinearLayout>
+    </LinearLayout>
 
-    <CheckBox
-        android:id="@+id/logProtocol"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/advanced_settings_logProtocol"
-        android:textColor="@color/settings_text_primary" />
+    <TextView style="@style/SettingsSection" android:tag="section" android:text="@string/settings_section_wireless" />
 
-    <CheckBox
-        android:id="@+id/enable_debug"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/advanced_settings_enabledebug"
-        android:textColor="@color/settings_text_primary" />
+    <LinearLayout style="@style/SettingsGroup" android:tag="group">
+        <CheckBox android:id="@+id/enable_wifi" style="@style/SettingsSwitch" android:text="@string/advanced_settings_enablewifi" />
+        <TextView style="@style/SettingsHint" android:tag="hint" android:paddingTop="0dp" android:paddingBottom="14dp"
+            android:text="@string/advanced_settings_enablewifi_hint" />
+    </LinearLayout>
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:gravity="left|center_vertical"
-        android:labelFor="@id/log_dir"
-        android:text="@string/advanced_settings_logDir"
-        android:textColor="@color/settings_text_primary" />
+    <TextView style="@style/SettingsSection" android:tag="section" android:text="@string/settings_section_honda" />
 
-    <EditText
-        android:id="@+id/log_dir"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:gravity="left|center_vertical"
-        android:imeOptions="actionDone"
-        android:inputType="text"
-        android:maxLines="1"
-        android:textColor="@color/settings_text_primary" />
-
-    <CheckBox
-        android:id="@+id/enable_wifi"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/advanced_settings_enablewifi"
-        android:textColor="@color/settings_text_primary" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginLeft="8dp"
-        android:layout_marginRight="8dp"
-        android:layout_marginBottom="6dp"
-        android:text="@string/advanced_settings_enablewifi_hint"
-        android:textColor="@color/settings_text_secondary"
-        android:textSize="12sp" />
-
-    <CheckBox
-        android:id="@+id/enable_hondaintegration"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/advanced_settings_enablehondaintegration"
-        android:textColor="@color/settings_text_primary" />
-
-    <CheckBox
-        android:id="@+id/enable_hondamicvr"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/advanced_settings_enablehondamicvr"
-        android:textColor="@color/settings_text_primary" />
-
-    <CheckBox
-        android:id="@+id/enable_usebtmicvr"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/advanced_settings_usebtmicvr"
-        android:textColor="@color/settings_text_primary" />
-
-    <CheckBox
-        android:id="@+id/enable_hondaimid"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/advanced_settings_enablehondaimid"
-        android:textColor="@color/settings_text_primary" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:gravity="left|center_vertical"
-        android:labelFor="@id/modemgraudiovideo_idx"
-        android:textColor="@color/settings_text_primary"
-        android:text="@string/advanced_settings_modeMgrAudioVideoIdx"/>
-
-    <EditText
-        android:id="@+id/modemgraudiovideo_idx"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:inputType="number"
-        android:gravity="left|center_vertical"
-        android:textColor="@color/settings_text_primary"
-        android:imeOptions="actionDone"
-        android:text=""/>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:gravity="center"
-        android:labelFor="@id/modemgrvideo_idx"
-        android:textColor="@color/settings_text_primary"
-        android:text="@string/advanced_settings_modeMgrVideoIdx"/>
-
-    <EditText
-        android:id="@+id/modemgrvideo_idx"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:inputType="number"
-        android:gravity="left|center_vertical"
-        android:textColor="@color/settings_text_primary"
-        android:imeOptions="actionDone"
-        android:text=""/>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:gravity="left|center_vertical"
-        android:labelFor="@id/sw_mode"
-        android:textColor="@color/settings_text_primary"
-        android:text="@string/advanced_settings_swmode"/>
-
-    <Spinner
-        android:id="@+id/sw_mode"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:gravity="left|center_vertical"
-        android:textColor="@color/settings_text_primary"
-        android:textAlignment="viewStart"/>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:gravity="left|center_vertical"
-        android:labelFor="@id/steeringwheel_idx"
-        android:textColor="@color/settings_text_primary"
-        android:text="@string/advanced_settings_steeringWheelIdx"/>
-
-    <EditText
-        android:id="@+id/steeringwheel_idx"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:inputType="number"
-        android:gravity="left|center_vertical"
-        android:textColor="@color/settings_text_primary"
-        android:imeOptions="actionDone"
-        android:enabled="false"
-        android:text=""/>
+    <LinearLayout style="@style/SettingsGroup" android:tag="group">
+        <CheckBox android:id="@+id/enable_hondaintegration" style="@style/SettingsSwitch" android:text="@string/advanced_settings_enablehondaintegration" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/enable_hondamicvr" style="@style/SettingsSwitch" android:text="@string/advanced_settings_enablehondamicvr" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/enable_usebtmicvr" style="@style/SettingsSwitch" android:text="@string/advanced_settings_usebtmicvr" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/enable_hondaimid" style="@style/SettingsSwitch" android:text="@string/advanced_settings_enablehondaimid" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <LinearLayout style="@style/SettingsFieldRow">
+            <TextView style="@style/SettingsFieldLabel" android:tag="label" android:labelFor="@id/modemgraudiovideo_idx" android:text="@string/advanced_settings_modeMgrAudioVideoIdx" />
+            <EditText android:id="@+id/modemgraudiovideo_idx" style="@style/SettingsFieldValue" android:imeOptions="actionDone" android:inputType="number" android:maxLines="1" />
+        </LinearLayout>
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <LinearLayout style="@style/SettingsFieldRow">
+            <TextView style="@style/SettingsFieldLabel" android:tag="label" android:labelFor="@id/modemgrvideo_idx" android:text="@string/advanced_settings_modeMgrVideoIdx" />
+            <EditText android:id="@+id/modemgrvideo_idx" style="@style/SettingsFieldValue" android:imeOptions="actionDone" android:inputType="number" android:maxLines="1" />
+        </LinearLayout>
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <LinearLayout style="@style/SettingsFieldRow">
+            <TextView style="@style/SettingsFieldLabel" android:tag="label" android:labelFor="@id/sw_mode" android:text="@string/advanced_settings_swmode" />
+            <Spinner android:id="@+id/sw_mode" style="@style/SettingsFieldValue" />
+        </LinearLayout>
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <LinearLayout style="@style/SettingsFieldRow">
+            <TextView style="@style/SettingsFieldLabel" android:tag="label" android:labelFor="@id/steeringwheel_idx" android:text="@string/advanced_settings_steeringWheelIdx" />
+            <EditText android:id="@+id/steeringwheel_idx" style="@style/SettingsFieldValue" android:enabled="false" android:imeOptions="actionDone" android:inputType="number" android:maxLines="1" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

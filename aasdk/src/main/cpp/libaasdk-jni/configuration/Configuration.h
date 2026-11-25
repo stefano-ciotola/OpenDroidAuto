@@ -37,9 +37,9 @@ private:
     std::string huMake_;
     std::string huModel_;
     std::string swVersion_;
-    bool playMediaDuringVr_;
-    bool leftHandDrive_;
-    bool hideClock_;
+    bool playMediaDuringVr_ = false;
+    bool leftHandDrive_ = true;
+    bool hideClock_ = false;
 };
 
 }

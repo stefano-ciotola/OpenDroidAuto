@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include "channel/av/VideoServiceChannel.hpp"
 #include "channel/av/IVideoServiceChannelEventHandler.hpp"
@@ -30,6 +31,8 @@ public:
     void onAVMediaIndication(const aasdk::common::DataConstBuffer& buffer) override;
     void onVideoFocusRequest(const aasdk::proto::messages::VideoFocusRequest& request) override;
     void onChannelError(const aasdk::error::Error& e) override;
+    void releaseFocus();
+    void gainFocus();
 
 private:
     using std::enable_shared_from_this<VideoService>::shared_from_this;
@@ -42,7 +45,7 @@ private:
     int32_t session_;
     service::IVideoEventHandler::Pointer eventHandler_;
     IServiceEventHandler::Pointer serviceEventHandler_;
-    bool isRunning_;
+    std::atomic<bool> isRunning_;
 };
 
 }

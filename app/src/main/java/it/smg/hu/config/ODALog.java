@@ -70,9 +70,9 @@ public class ODALog implements ILog {
                 v_(TAG, "external storage writable");
                 String extStoragePath = settings_.advanced.logDir();
 
-                if (!extStoragePath.trim().isEmpty()) {
-                    File extStorageDir = new File(extStoragePath);
-                    if (extStorageDir.exists()){
+                if (extStoragePath != null && !extStoragePath.trim().isEmpty()) {
+                    File extStorageDir = resolveWritableLogBaseDir(new File(extStoragePath.trim()));
+                    if (extStorageDir != null) {
                         File logDirectory = new File(extStorageDir, "logs");
                         File logFile = new File(logDirectory, "logcat_" + System.currentTimeMillis() + ".txt");
 
@@ -127,6 +127,8 @@ public class ODALog implements ILog {
                         } catch (InterruptedException ignored) {
                             _deInit();
                         }
+                    } else {
+                        w_(TAG, "log base directory unavailable: " + extStoragePath);
                     }
                 }
             } else if (isExternalStorageReadable()) {
@@ -135,6 +137,24 @@ public class ODALog implements ILog {
                 w_(TAG, "log storage not accessible");
             }
         }
+    }
+
+    static File resolveWritableLogBaseDir(File extStorageDir) {
+        if (extStorageDir == null) {
+            return null;
+        }
+        if (extStorageDir.isDirectory()) {
+            return extStorageDir;
+        }
+        if (extStorageDir.exists()) {
+            return null;
+        }
+        // Create only a missing leaf folder (e.g. ODA/ on a mounted USB drive) without fabricating an unmounted mountpoint.
+        File parent = extStorageDir.getParentFile();
+        if (parent != null && parent.isDirectory() && extStorageDir.mkdir()) {
+            return extStorageDir;
+        }
+        return null;
     }
 
     /**
