@@ -52,7 +52,13 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         @Override
         public void run() {
             String report = VideoOutput.activeStatsReport();
-            statsView_.setText(report != null ? report : getString(R.string.video_stats_waiting));
+            String text = report != null ? report : getString(R.string.video_stats_waiting);
+            HondaConnectManager clock = clockHiddenBy_;
+            String clockStatus = clock != null ? clock.fullScreenClockStatus() : null;
+            if (clockStatus != null) {
+                text += "\nhu-clock " + clockStatus;
+            }
+            statsView_.setText(text);
             statsHandler_.postDelayed(this, STATS_REFRESH_MS);
         }
     };
@@ -170,7 +176,7 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         if (hondaManager != null){
             hondaManager.initAudioBinding();
             if (Settings.instance().car.hideHeadUnitClock()) {
-                hondaManager.setFullScreenClockVisible(false);
+                hondaManager.hideFullScreenClock();
                 clockHiddenBy_ = hondaManager;
             }
         }
@@ -195,12 +201,22 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // The status bar service shows its clock again when a full-screen
+        // window gains focus, which happens after onResume.
+        if (hasFocus && clockHiddenBy_ != null) {
+            clockHiddenBy_.reapplyFullScreenClockHidden();
+        }
+    }
+
+    @Override
     protected void onPause() {
         if (Log.isDebug()) Log.d(TAG, "onPause");
         super.onPause();
         statsHandler_.removeCallbacks(statsTick_);
         if (clockHiddenBy_ != null) {
-            clockHiddenBy_.setFullScreenClockVisible(true);
+            clockHiddenBy_.restoreFullScreenClock();
             clockHiddenBy_ = null;
         }
         pendingGainFocus_ = false;
