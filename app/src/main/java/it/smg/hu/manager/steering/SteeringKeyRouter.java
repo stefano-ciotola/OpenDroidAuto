@@ -7,9 +7,10 @@ import java.util.Map;
  * Decides what a steering wheel press does once the Honda framework has
  * delivered it.
  *
- * The same press can reach the app through more than one callback (key event,
- * smartphone, inspection, steering menu), so a press of a key that already went
- * out a moment earlier through another callback is dropped. The voice button is
+ * The same press can reach the app through more than one path (key event,
+ * smartphone, inspection and steering menu callbacks, and the window's key
+ * events), so a press of a key that already went out a moment earlier through
+ * another path is dropped. The voice button is
  * stricter: Talk, Talk held down and "Siri start" are one press for the user,
  * and a second voice key would close the assistant the first one opened. A new
  * short press of Talk still goes through, so the assistant can be stopped from
@@ -29,7 +30,7 @@ import java.util.Map;
 public final class SteeringKeyRouter {
 
     public enum Source {
-        KEY_EVENT("key"), PHONE("phone"), INSPECTION("insp"), STEERING_MENU("menu");
+        KEY_EVENT("key"), PHONE("phone"), INSPECTION("insp"), STEERING_MENU("menu"), WINDOW("win");
 
         final String label;
 
@@ -117,10 +118,15 @@ public final class SteeringKeyRouter {
     /** Handles one callback. */
     public Result onKey(Source source, int first, int second) {
         final HondaKeys.Key key = normalize(source, first, second);
-        final boolean twoArgs = source == Source.KEY_EVENT || source == Source.INSPECTION;
+        final boolean twoArgs = source == Source.KEY_EVENT || source == Source.INSPECTION || source == Source.WINDOW;
         final String raw = source.label + "(" + first + (twoArgs ? "," + second : "") + ")";
         if (key == HondaKeys.Key.UNKNOWN) {
             return new Result(key, Outcome.UNKNOWN, raw);
+        }
+
+        if (source == Source.WINDOW && second > 0 && !HondaKeys.isVolume(key)) {
+            // The window repeats a held key; only the volume steps with it.
+            return new Result(key, Outcome.DUPLICATE, raw);
         }
 
         final int family = familyOf(key);

@@ -204,6 +204,27 @@ public class SteeringKeyRouterTest {
     }
 
     @Test
+    public void aWindowKeyAndItsCallbackCopyAreOnePress() {
+        assertEquals(Outcome.PROJECTION, key(Source.WINDOW, HondaKeys.STRG_CH_UP, 0, 0));
+        assertEquals(Outcome.DUPLICATE, key(Source.STEERING_MENU, HondaKeys.STRG_CH_UP, 0, 4));
+        assertEquals(Outcome.PROJECTION, key(Source.STEERING_MENU, HondaKeys.STRG_TALK_LONG, 0, 3000));
+        assertEquals(Outcome.DUPLICATE, key(Source.WINDOW, HondaKeys.STRG_TALK_LONG, 0, 5));
+        assertEquals(2, output.sent.size());
+    }
+
+    @Test
+    public void aHeldKeyInTheWindowRepeatsOnlyTheVolume() {
+        assertEquals(Outcome.PROJECTION, key(Source.WINDOW, HondaKeys.STRG_CH_UP, 0, 0));
+        assertEquals(Outcome.DUPLICATE, key(Source.WINDOW, HondaKeys.STRG_CH_UP, 1, 500));
+        assertEquals(Outcome.DUPLICATE, key(Source.WINDOW, HondaKeys.STRG_CH_UP, 2, 50));
+        assertEquals(Outcome.PROJECTION, key(Source.WINDOW, HondaKeys.STRG_VOLUME_UP, 0, 1000));
+        assertEquals(Outcome.PROJECTION, key(Source.WINDOW, HondaKeys.STRG_VOLUME_UP, 1, 500));
+        assertEquals(Outcome.PROJECTION, key(Source.WINDOW, HondaKeys.STRG_VOLUME_UP, 2, 50));
+        assertEquals(4, output.sent.size());
+        assertEquals("NEXT win(-65533,1) dup", router.onKey(Source.WINDOW, HondaKeys.STRG_CH_UP, 1).toString());
+    }
+
+    @Test
     public void describesWhatHappened() {
         assertEquals("TALK key(-65526,1) -> AA", router.onKey(Source.KEY_EVENT, HondaKeys.STRG_TALK, 1).toString());
         clock.now += 5;

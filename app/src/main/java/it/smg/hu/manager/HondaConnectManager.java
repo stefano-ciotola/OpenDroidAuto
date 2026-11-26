@@ -282,7 +282,9 @@ public class HondaConnectManager {
 
                 registerSteeringMenuCallback();
 
-                if (!isPreinstall()){
+                // The steering menu announcement is what makes the head unit
+                // hand the wheel keys to this app (see initAudioBinding).
+                if (!isPreinstall() || inForeground_){
                     notifySteeringMenuDispMode(1);
                 }
 
@@ -424,14 +426,14 @@ public class HondaConnectManager {
                     requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
                 }
 
-                unregisterSteeringMenuCallback();
                 // Media paused does not mean the user stopped using the
                 // projection: while it is on screen the steering wheel keys
                 // must keep reaching it.
                 if (!inForeground_) {
+                    unregisterSteeringMenuCallback();
                     unregisterModeMgrSWCallbacks();
+                    notifySteeringMenuDispMode(0);
                 }
-                notifySteeringMenuDispMode(0);
             });
         }
     }
@@ -577,6 +579,15 @@ public class HondaConnectManager {
                 requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
                 registerModeMgrSWCallbacks();
             }
+            // The head unit keeps the steering wheel keys for itself unless an
+            // app has registered with its steering menu service and announced
+            // its menu as shown; then they reach the app's window as key
+            // events. This used to happen only with the audio focus, so with
+            // the radio playing the wheel kept controlling the radio. hu15
+            // (github.com/omgmog/hu15), an Android Auto receiver for the same
+            // Honda units, does it whenever its projection is shown.
+            registerSteeringMenuCallback();
+            notifySteeringMenuDispMode(1);
         } else {
             // THIRD_PARTY
             if (Log.isDebug()) Log.d(TAG, "initAudioBinding -> using authType not PREINSTALL -> register SW callback and notify");
@@ -1378,6 +1389,16 @@ public class HondaConnectManager {
     }
 
     // ---- Steering wheel keys
+
+    /**
+     * A steering wheel key that reached the projection's window as a key
+     * event (how the head unit delivers them once the steering menu is
+     * announced). It goes through the same router as the callbacks, so a press
+     * that also arrives on a callback is sent once. Returns the outcome.
+     */
+    public SteeringKeyRouter.Result onWindowSteeringKey(int keyCode, int repeatCount) {
+        return onSteeringKey(SteeringKeyRouter.Source.WINDOW, keyCode, repeatCount);
+    }
 
     private SteeringKeyRouter.Result onSteeringKey(SteeringKeyRouter.Source source, int first, int second) {
         final SteeringKeyRouter.Result result = steeringKeys_.onKey(source, first, second);

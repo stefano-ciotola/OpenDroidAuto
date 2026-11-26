@@ -17,6 +17,7 @@ import java.util.Map;
 
 import it.smg.hu.config.Settings;
 import it.smg.hu.manager.HondaConnectManager;
+import it.smg.hu.manager.steering.HondaKeys;
 import it.smg.hu.ui.settings.KeymapFragment;
 import it.smg.libs.common.Log;
 
@@ -245,6 +246,18 @@ public class InputDevice extends it.smg.libs.aasdk.projection.InputDevice implem
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
         final int action = event.getAction(); // 1 - UP, 0 - DOWN
+        if (HondaKeys.fromStrgCode(keyCode) != HondaKeys.Key.UNKNOWN
+                && Settings.instance().advanced.hondaIntegrationEnabled()) {
+            // A Honda steering wheel key: the router sends it (press and
+            // release) once, even when a callback delivers the same press.
+            final HondaConnectManager honda = HondaConnectManager.instance();
+            if (honda != null) {
+                if (action == KeyEvent.ACTION_DOWN) {
+                    return honda.onWindowSteeringKey(keyCode, event.getRepeatCount()).consumed();
+                }
+                return resolve(keyCode) != NOT_MAPPED;
+            }
+        }
         final int target = resolve(keyCode);
         if (target == NOT_MAPPED) {
             return false;
