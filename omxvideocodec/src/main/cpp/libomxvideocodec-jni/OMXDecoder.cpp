@@ -1,5 +1,7 @@
 #include "OMXDecoder.h"
+#include "EarlyReleaseOMX.h"
 #include "VideoStats.h"
+#include <chrono>
 #include <Log.h>
 #include <cstring>
 #include <media/IOMX.h>
@@ -123,9 +125,9 @@ const std::string& OMXDecoder::summary() const {
 }
 
 status_t OMXDecoder::init(const DecoderOptions& options){
-    if (Log::isInfo()) Log_i("init decoder (one input buffer: %d, nvidia lowbuf %d nodpb %d fullframe %d)",
+    if (Log::isInfo()) Log_i("init decoder (one input buffer: %d, nvidia lowbuf %d nodpb %d fullframe %d, early release %d)",
                              options.oneInputBuffer, options.nvidiaLowBuffer, options.nvidiaNoDpb,
-                             options.nvidiaFullFrame);
+                             options.nvidiaFullFrame, options.earlyRelease);
 
     summary_ = std::string("one-input ") + (options.oneInputBuffer ? "on" : "off");
 
@@ -142,13 +144,22 @@ status_t OMXDecoder::init(const DecoderOptions& options){
             // a waiting callback. With a single buffer at most one is waiting.
             flags |= OMXCodec::kOnlySubmitOneInputBufferAtOneTime;
         }
-        decoder_ = OMXCodec::Create(client_->interface(), source_->getFormat(), false, source_,
+        sp<EarlyReleaseOMX> earlyRelease;
+        codecOmx_ = client_->interface();
+        if (options.earlyRelease) {
+            earlyRelease = new EarlyReleaseOMX(client_->interface(), source_);
+            codecOmx_ = earlyRelease;
+        }
+        decoder_ = OMXCodec::Create(codecOmx_, source_->getFormat(), false, source_,
                                     nullptr, flags, nativeWindow_);
         if (decoder_ == nullptr) {
             Log_e("no hardware AVC decoder could be created");
             summary_ += " | decoder: none";
             status_ = NO_INIT;
             return status_;
+        }
+        if (options.earlyRelease) {
+            summary_ += earlyRelease->installed() ? " | early-release on" : " | early-release not installed";
         }
 
         summary_ += " | nvidia ";
@@ -188,7 +199,7 @@ std::string OMXDecoder::applyNvidiaParams(uint32_t requestedFlags, const Decoder
 
     // Never hand OMX a node id unless the object clearly looks like the OMXCodec
     // we just created: an unknown node id would crash mediaserver.
-    if (codecOmx.get() != client_->interface().get() ||
+    if (codecOmx.get() != codecOmx_.get() ||
         (codecFlags & requestedFlags) != requestedFlags || node == nullptr) {
         if (Log::isWarn()) Log_w("OMXCodec layout not recognised, Nvidia low-latency mode skipped");
         return "skipped";
@@ -275,7 +286,13 @@ status_t OMXDecoder::read(){
 
     if (videoBuffer != nullptr) {
         if (Log::isVerbose()) Log_v("release videobuffer");
+        // release() hands the buffer back to OMXCodec under its lock: the time
+        // spent here is how long that lock was held by a callback waiting in
+        // OMXSource::read() for the next frame (EarlyReleaseOMX.h).
+        const auto releaseStart = std::chrono::steady_clock::now();
         videoBuffer->release();
+        VideoStats::instance().onRelease(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - releaseStart).count());
         videoBuffer = nullptr;
     }
 

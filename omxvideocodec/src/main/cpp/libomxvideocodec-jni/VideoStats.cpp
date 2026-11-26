@@ -371,6 +371,7 @@ void VideoStats::resetLocked() {
     keyFrames_ = 0;
     lastKeyFrameBytes_ = 0;
     pushTotal_ = 0;
+    parkTotal_ = 0;
     streamSummary_.clear();
 }
 
@@ -399,6 +400,24 @@ void VideoStats::onPush() {
     }
     std::lock_guard<std::mutex> lock(mutex_);
     ++pushTotal_;
+}
+
+void VideoStats::onPark() {
+    if (!enabled()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    ++parkTotal_;
+}
+
+void VideoStats::onRelease(int64_t ns) {
+    if (!enabled()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    ++window_.releaseCount;
+    window_.releaseSumNs += ns;
+    window_.releaseMaxNs = std::max(window_.releaseMaxNs, ns);
 }
 
 void VideoStats::onReceived(size_t bytes, int64_t timestampUs) {
@@ -512,6 +531,7 @@ void VideoStats::run() {
         uint64_t keyFrames;
         size_t lastKeyFrameBytes;
         uint64_t pushTotal;
+        uint64_t parkTotal;
         std::string summary;
         std::string stream;
         {
@@ -523,6 +543,7 @@ void VideoStats::run() {
             keyFrames = keyFrames_;
             lastKeyFrameBytes = lastKeyFrameBytes_;
             pushTotal = pushTotal_;
+            parkTotal = parkTotal_;
             summary = decoderSummary_;
             stream = streamSummary_;
             // A frame that has been waiting since the last arrival is a gap too:
@@ -552,10 +573,22 @@ void VideoStats::run() {
         } else {
             snprintf(latency, sizeof(latency), "LAT -");
         }
-        char line2[192];
-        snprintf(line2, sizeof(line2), "%s | in decoder %d (max %d) | queue %u (max %u) | drop %u (tot %llu)",
+        // Time the output thread waited to hand a frame back to OMXCodec, in
+        // milliseconds with one decimal: about 0 when nothing holds the codec's
+        // lock, about one frame interval when a callback waits in read().
+        char release[40] = "";
+        if (window.releaseCount > 0) {
+            const int64_t avgTenths = window.releaseSumNs / window.releaseCount / 100000;
+            const int64_t maxTenths = window.releaseMaxNs / 100000;
+            snprintf(release, sizeof(release), " | rel %d.%d/%d.%d ms",
+                     static_cast<int>(avgTenths / 10), static_cast<int>(avgTenths % 10),
+                     static_cast<int>(maxTenths / 10), static_cast<int>(maxTenths % 10));
+        }
+        char line2[224];
+        snprintf(line2, sizeof(line2), "%s | in decoder %d (max %d)%s | queue %u (max %u) | drop %u (tot %llu)",
                  latency,
                  static_cast<int>(decoderDepth), static_cast<int>(window.maxDecoderDepth),
+                 release,
                  static_cast<unsigned>(queueLength), static_cast<unsigned>(window.maxQueue),
                  window.dropped, static_cast<unsigned long long>(droppedTotal));
 
@@ -569,18 +602,21 @@ void VideoStats::run() {
         if (!summary.empty()) {
             report += "\n" + summary;
         }
-        char keyFrameText[80];
+        char keyFrameText[48];
+        snprintf(keyFrameText, sizeof(keyFrameText), " | IDR %llu last %u KB",
+                 static_cast<unsigned long long>(keyFrames),
+                 static_cast<unsigned>((lastKeyFrameBytes + 512) / 1024));
+        std::string streamLine = (stream.empty() ? std::string("SPS -") : stream) + keyFrameText;
+        char extra[48];
         if (pushTotal > 0) {
-            snprintf(keyFrameText, sizeof(keyFrameText), " | IDR %llu last %u KB | push %llu",
-                     static_cast<unsigned long long>(keyFrames),
-                     static_cast<unsigned>((lastKeyFrameBytes + 512) / 1024),
-                     static_cast<unsigned long long>(pushTotal));
-        } else {
-            snprintf(keyFrameText, sizeof(keyFrameText), " | IDR %llu last %u KB",
-                     static_cast<unsigned long long>(keyFrames),
-                     static_cast<unsigned>((lastKeyFrameBytes + 512) / 1024));
+            snprintf(extra, sizeof(extra), " | push %llu", static_cast<unsigned long long>(pushTotal));
+            streamLine += extra;
         }
-        report += "\n" + (stream.empty() ? std::string("SPS -") : stream) + keyFrameText;
+        if (parkTotal > 0) {
+            snprintf(extra, sizeof(extra), " | park %llu", static_cast<unsigned long long>(parkTotal));
+            streamLine += extra;
+        }
+        report += "\n" + streamLine;
 
         if (Log::isInfo()) {
             // One logcat line per report, easy to grep for "RX ".

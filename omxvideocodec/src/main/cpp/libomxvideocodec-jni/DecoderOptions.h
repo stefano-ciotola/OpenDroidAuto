@@ -19,6 +19,7 @@ struct DecoderOptions {
         kNvidiaFullFrame  = 1 << 7,
         kSpsLevel31       = 1 << 8,
         kIdlePush         = 1 << 9,
+        kEarlyRelease     = 1 << 10,
     };
 
     // Hand OMXCodec a single input buffer at a time
@@ -43,6 +44,9 @@ struct DecoderOptions {
     // buffer so the codec's pending callbacks, and the decoded frame waiting
     // behind them, are delivered (OMXSource::nextBuffer).
     bool idlePush = false;
+    // Park the decoder's EMPTY_BUFFER_DONE callbacks while no frame is
+    // waiting, so decoded frames are delivered at once (EarlyReleaseOMX.h).
+    bool earlyRelease = false;
 
     bool anyNvidia() const {
         return nvidiaLowBuffer || nvidiaNoDpb || nvidiaFullFrame;
@@ -60,6 +64,7 @@ struct DecoderOptions {
         options.spsLowLatency = (bits & kSpsLowLatency) != 0;
         options.spsLevel31 = (bits & kSpsLevel31) != 0;
         options.idlePush = (bits & kIdlePush) != 0;
+        options.earlyRelease = (bits & kEarlyRelease) != 0;
         return options;
     }
 };

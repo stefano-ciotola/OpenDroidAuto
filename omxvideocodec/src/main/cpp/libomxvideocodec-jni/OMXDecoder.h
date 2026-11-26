@@ -32,6 +32,8 @@ private:
     std::string applyNvidiaParams(uint32_t requestedFlags, const DecoderOptions& options);
 
     OMXClient* client_;
+    // The IOMX handed to OMXCodec: the client's own, or EarlyReleaseOMX.
+    sp<IOMX> codecOmx_;
     sp<MediaSource> decoder_;
     sp<ANativeWindow> nativeWindow_;
     OMXSource::Pointer source_;

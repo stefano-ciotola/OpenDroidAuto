@@ -40,6 +40,10 @@ private:
     bool rewriteSps(const uint8_t* data, std::size_t size, std::vector<uint8_t>* patched);
 
     OMXSource::Pointer omxSource_;
+    // OMXSource is reference counted: OMXCodec, and with early release the
+    // decoder's observer, hold it too. This keeps it alive as long as the
+    // codec, whatever they do.
+    sp<OMXSource> sourceRef_;
     OMXDecoder::Pointer omxDecoder_;
 
     std::thread omxDecoderThread_;

@@ -41,6 +41,10 @@ public:
     void onKeyFrame(size_t bytes);
     // An empty input buffer handed to the decoder while no frame arrived.
     void onPush();
+    // Early release parked an EMPTY_BUFFER_DONE (no frame was waiting).
+    void onPark();
+    // Time the output thread spent handing a shown frame back to OMXCodec.
+    void onRelease(int64_t ns);
 
     // Latest report, empty until the first window has closed. Any thread.
     std::string lastReport();
@@ -63,6 +67,9 @@ private:
         uint32_t dropped = 0;
         size_t maxQueue = 0;
         int64_t maxDecoderDepth = 0;
+        uint32_t releaseCount = 0;
+        int64_t releaseSumNs = 0;
+        int64_t releaseMaxNs = 0;
     };
 
     struct Arrival {
@@ -90,6 +97,7 @@ private:
     uint64_t keyFrames_ = 0;
     size_t lastKeyFrameBytes_ = 0;
     uint64_t pushTotal_ = 0;
+    uint64_t parkTotal_ = 0;
     std::string decoderSummary_;
     std::string streamSummary_;
 

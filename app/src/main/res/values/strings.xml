@@ -100,6 +100,7 @@
 	<string name="video_stats_overlay">Show video statistics over the projection</string>
 	<string name="video_decoder_one_input">Feed the decoder one frame at a time (lower latency)</string>
 	<string name="video_decoder_sps_level_31">With the SPS patch: correct an H.264 level below 3.1 (test)</string>
+	<string name="video_decoder_early_release">Release decoded frames at once (test)</string>
 	<string name="video_decoder_idle_push">Push the decoder when no new frame arrives (test)</string>
 	<string name="video_decoder_nvidia_low_buffer">Nvidia: low buffer (test)</string>
 	<string name="video_decoder_nvidia_no_dpb">Nvidia: no picture buffer (test)</string>

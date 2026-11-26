@@ -99,6 +99,7 @@
 	<string name="video_stats_overlay">Mostra le statistiche video sopra la proiezione</string>
 	<string name="video_decoder_one_input">Passa al decoder un fotogramma alla volta (meno latenza)</string>
 	<string name="video_decoder_sps_level_31">Con la patch SPS: correggi un livello H.264 sotto 3.1 (prova)</string>
+	<string name="video_decoder_early_release">Fai uscire subito i fotogrammi decodificati (prova)</string>
 	<string name="video_decoder_idle_push">Spingi il decoder quando non arrivano fotogrammi nuovi (prova)</string>
 	<string name="video_decoder_nvidia_low_buffer">Nvidia: buffer ridotto (prova)</string>
 	<string name="video_decoder_nvidia_no_dpb">Nvidia: niente buffer delle immagini (prova)</string>

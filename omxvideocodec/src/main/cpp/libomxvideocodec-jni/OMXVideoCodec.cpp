@@ -39,6 +39,7 @@ OMXVideoCodec::~OMXVideoCodec() {
     omxDecoder_ = nullptr;
 
     omxSource_ = nullptr;
+    sourceRef_.clear();
 }
 
 status_t OMXVideoCodec::init(int fps, const DecoderOptions& options){
@@ -102,6 +103,7 @@ void OMXVideoCodec::init_omxDecoderThread() {
 
     omxSource_ = new OMXSource(screenSize_.width, screenSize_.height, fps_, options_.legacyDrop,
                                options_.idlePush);
+    sourceRef_ = omxSource_;
 
     if (Log::isDebug()) Log_d("Created OMXSource %p", omxSource_);
 
@@ -114,6 +116,7 @@ void OMXVideoCodec::init_omxDecoderThread() {
     summary += std::string(" | legacy-drop ") + (options_.legacyDrop ? "on" : "off");
     summary += std::string(" | sps-patch ") + (options_.spsLowLatency ? (options_.spsLevel31 ? "on+level" : "on") : "off");
     summary += std::string(" | push ") + (options_.idlePush ? "on" : "off");
+    summary += " | fps req " + std::to_string(fps_);
     if (Log::isInfo()) Log_i("decoder options: %s", summary.c_str());
     VideoStats::instance().setDecoderSummary(summary);
 

@@ -8,6 +8,7 @@
 #include <media/stagefright/openmax/OMX_Video.h>
 #include <cinttypes>
 #include <sstream>
+#include <sys/prctl.h>
 
 using namespace android;
 
@@ -46,7 +47,8 @@ OMXSource::OMXSource(int width, int height, int fps, bool legacyDrop, bool idleP
         maxQueuedDurationUs_(legacyDrop ? kLegacyMaxQueuedDurationUs : kSafetyMaxQueuedDurationUs),
         quitFlag_(false), waitingForSync_(false), droppedBuffers_(0),
         syncWaitDroppedBuffers_(0),
-        idlePush_(idlePush), pushesSinceFrame_(kMaxPushes), lastFrameTimeUs_(-1)
+        idlePush_(idlePush), pushesSinceFrame_(kMaxPushes), lastFrameTimeUs_(-1),
+        claimed_(0)
 {
 
     int32_t bufferSize = (width * height * 3) / 2;
@@ -72,6 +74,19 @@ OMXSource::OMXSource(int width, int height, int fps, bool legacyDrop, bool idleP
 
 OMXSource::~OMXSource() {
     if (Log::isDebug()) Log_d("destructor");
+    {
+        std::unique_lock<std::mutex> l(mutex_);
+        quitFlag_ = true;
+        forwardCond_.notify_one();
+    }
+    std::lock_guard<std::mutex> guard(joinMutex_);
+    if (forwarder_.joinable()) {
+        if (forwarder_.get_id() != std::this_thread::get_id()) {
+            forwarder_.join();
+        } else {
+            forwarder_.detach();
+        }
+    }
 }
 
 void OMXSource::queueBuffer(MediaBuffer* buffer){
@@ -156,6 +171,9 @@ void OMXSource::queueBuffer(MediaBuffer* buffer){
 
     if (Log::isVerbose()) Log_v("queueBuffer new size %d", pbuffers_.size());
     cond_.notify_one();
+    if (!parked_.empty()) {
+        forwardCond_.notify_one();
+    }
 }
 
 sp<MetaData>  OMXSource::getFormat(){
@@ -185,6 +203,9 @@ bool OMXSource::nextBuffer(Pending* pending){
                     pending->buffer = makePushBuffer();
                     pending->hasSlice = false;
                     pending->push = true;
+                    if (claimed_ > 0) {
+                        --claimed_;
+                    }
                     return true;
                 }
                 continue;
@@ -196,6 +217,9 @@ bool OMXSource::nextBuffer(Pending* pending){
         if (Log::isVerbose()) Log_v("buffer size %d", pbuffers_.size());
         *pending = pbuffers_.front();
         pbuffers_.pop_front();
+        if (claimed_ > 0) {
+            --claimed_;
+        }
         VideoStats::instance().onQueueLength(pbuffers_.size());
         if (Log::isVerbose()) Log_v("found buffer %d", pbuffers_.size());
         if (pending->hasSlice) {
@@ -266,9 +290,79 @@ status_t OMXSource::stop() {
         if (Log::isDebug()) Log_d("delete pbuffer: %d", pbuffers_.size());
         clearQueuedBuffers();
         cond_.notify_one();
+        forwardCond_.notify_one();
     }
+    l.unlock();
+    // The forwarder passes on everything still parked: OMXCodec waits for
+    // those input buffers when it stops. The first stop() comes from
+    // OMXVideoCodec::shutdown(), without OMXCodec's lock; OMXCodec calls
+    // stop() again later, holding its lock, when the forwarder is gone.
+    joinForwarder();
     if (Log::isDebug()) Log_d("stopped");
     return OK;
+}
+
+void OMXSource::joinForwarder() {
+    std::lock_guard<std::mutex> guard(joinMutex_);
+    if (forwarder_.joinable() && forwarder_.get_id() != std::this_thread::get_id()) {
+        forwarder_.join();
+    }
+}
+
+void OMXSource::setEmptyDoneObserver(const sp<IOMXObserver>& codecObserver) {
+    std::unique_lock<std::mutex> l(mutex_);
+    codecObserver_ = codecObserver;
+    if (!forwarder_.joinable() && !quitFlag_) {
+        forwarder_ = std::thread(&OMXSource::forwardParked, this);
+    }
+}
+
+std::size_t OMXSource::unclaimedFrames() const {
+    return pbuffers_.size() > claimed_ ? pbuffers_.size() - claimed_ : 0;
+}
+
+bool OMXSource::parkEmptyDone(const omx_message& msg) {
+    std::unique_lock<std::mutex> l(mutex_);
+    if (quitFlag_ || codecObserver_ == nullptr) {
+        return false;
+    }
+    if (unclaimedFrames() > 0) {
+        // OMXCodec's read() will find a frame at once: pass the message on.
+        ++claimed_;
+        return false;
+    }
+    parked_.push_back(msg);
+    VideoStats::instance().onPark();
+    return true;
+}
+
+// Own thread: OMXCodec may hold its lock while it waits in read() (its first
+// input buffer is read from its own read()), so passing a parked message on
+// from the thread that queues the phone's frames could deadlock.
+void OMXSource::forwardParked() {
+    prctl(PR_SET_NAME, "ODA-OMXRelease", 0, 0, 0);
+    std::unique_lock<std::mutex> l(mutex_);
+    while (true) {
+        forwardCond_.wait(l, [this]() { return quitFlag_ || (!parked_.empty() && unclaimedFrames() > 0); });
+        if (parked_.empty()) {
+            if (quitFlag_) {
+                break;
+            }
+            continue;
+        }
+        const omx_message msg = parked_.front();
+        parked_.pop_front();
+        if (!quitFlag_) {
+            ++claimed_;
+        }
+        const sp<IOMXObserver> observer = codecObserver_;
+        l.unlock();
+        if (observer != nullptr) {
+            observer->onMessage(msg);
+        }
+        l.lock();
+    }
+    if (Log::isDebug()) Log_d("early release forwarder ends");
 }
 
 void OMXSource::clearQueuedBuffers() {

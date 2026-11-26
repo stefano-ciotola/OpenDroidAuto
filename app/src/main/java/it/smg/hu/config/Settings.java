@@ -255,6 +255,7 @@ public class Settings {
         public final static String VIDEO_DECODER_NVIDIA_FULL_FRAME = "video_decoder_nvidia_full_frame";
         public final static String VIDEO_DECODER_SPS_LEVEL_31 = "video_decoder_sps_level_31";
         public final static String VIDEO_DECODER_IDLE_PUSH = "video_decoder_idle_push";
+        public final static String VIDEO_DECODER_EARLY_RELEASE = "video_decoder_early_release";
         public final static String VIDEO_DECODER_LEGACY_DROP = "video_decoder_legacy_drop";
         public final static String VIDEO_DECODER_SPS_LOW_LATENCY = "video_decoder_sps_low_latency";
 
@@ -277,6 +278,9 @@ public class Settings {
         public final static boolean VIDEO_DECODER_NVIDIA_FULL_FRAME_DEFAULT_VALUE = false;
         public final static boolean VIDEO_DECODER_SPS_LEVEL_31_DEFAULT_VALUE = false;
         public final static boolean VIDEO_DECODER_IDLE_PUSH_DEFAULT_VALUE = false;
+        // From the hirneagabriel fork, where it is off by default too: on
+        // after a successful test in the car.
+        public final static boolean VIDEO_DECODER_EARLY_RELEASE_DEFAULT_VALUE = false;
         public final static boolean VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE = false;
         // Declares "no frame reordering" in the SPS so the Tegra decoder stops
         // holding 4-5 decoded frames back before showing them.
@@ -370,6 +374,10 @@ public class Settings {
 
         public boolean decoderIdlePush() {
             return get(VIDEO_DECODER_IDLE_PUSH, VIDEO_DECODER_IDLE_PUSH_DEFAULT_VALUE);
+        }
+
+        public boolean decoderEarlyRelease() {
+            return get(VIDEO_DECODER_EARLY_RELEASE, VIDEO_DECODER_EARLY_RELEASE_DEFAULT_VALUE);
         }
 
         public boolean decoderLegacyDrop() {

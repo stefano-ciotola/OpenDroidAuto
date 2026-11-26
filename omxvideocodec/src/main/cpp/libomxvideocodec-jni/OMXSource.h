@@ -4,6 +4,7 @@
 #include <media/stagefright/MetaData.h>
 #include <utils/RefBase.h>
 #include <media/stagefright/MediaBufferGroup.h>
+#include <media/IOMX.h>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -30,6 +31,14 @@ public:
     status_t stop() override;
     sp<MetaData> getFormat() override;
     void queueBuffer(MediaBuffer* buffer);
+
+    // Early release (EarlyReleaseOMX.h). OMXCodec's own observer: parked
+    // EMPTY_BUFFER_DONE messages go to it from the forwarder thread, which
+    // this starts.
+    void setEmptyDoneObserver(const sp<IOMXObserver>& codecObserver);
+    // Binder callback thread, for each EMPTY_BUFFER_DONE: true when the
+    // message was parked because no frame is waiting; false to pass it on now.
+    bool parkEmptyDone(const omx_message& msg);
 
     status_t pause() override {
         return ERROR_UNSUPPORTED;
@@ -71,7 +80,22 @@ private:
     std::size_t pushesSinceFrame_;
     int64_t lastFrameTimeUs_;
 
+    // Early release state, guarded by mutex_. claimed_ counts the
+    // EMPTY_BUFFER_DONE messages passed on to OMXCodec whose read() has not
+    // returned yet: each will take one of the queued frames.
+    sp<IOMXObserver> codecObserver_;
+    std::deque<omx_message> parked_;
+    std::size_t claimed_;
+    std::thread forwarder_;
+    std::condition_variable forwardCond_;
+    // stop() runs twice, possibly at once on two threads (shutdown and
+    // OMXCodec::stop): only one of them may join the forwarder.
+    std::mutex joinMutex_;
+
     bool nextBuffer(Pending* pending);
     MediaBuffer* makePushBuffer();
     void clearQueuedBuffers();
+    std::size_t unclaimedFrames() const;
+    void forwardParked();
+    void joinForwarder();
 };

@@ -102,6 +102,9 @@ public class OMXVideoOutput extends VideoOutput /*implements Runnable*/ {
         if (settings_.video.decoderIdlePush()) {
             options |= OMXVideoCodec.OPTION_IDLE_PUSH;
         }
+        if (settings_.video.decoderEarlyRelease()) {
+            options |= OMXVideoCodec.OPTION_EARLY_RELEASE;
+        }
         if (settings_.video.decoderLegacyDrop()) {
             options |= OMXVideoCodec.OPTION_LEGACY_DROP;
         }

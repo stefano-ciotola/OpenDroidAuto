@@ -33,6 +33,8 @@ public class OMXVideoCodec {
     public static final int OPTION_SPS_LEVEL_31 = 1 << 8;
     /** Hand the decoder an empty buffer when no frame arrives, so the decoded one is shown at once. */
     public static final int OPTION_IDLE_PUSH = 1 << 9;
+    /** Park the decoder's input-done callbacks while no frame waits, so decoded frames come out at once. */
+    public static final int OPTION_EARLY_RELEASE = 1 << 10;
 
     private static native void nativeInit();
     private native long nativeSetup();

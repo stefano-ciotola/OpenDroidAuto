@@ -116,6 +116,8 @@ public class VideoFragment extends BaseSettingsFragment {
 
         CheckBox decoderIdlePush = view.findViewById(R.id.videoDecoderIdlePush);
         initCheckBox(decoderIdlePush, settings.video, Settings.Video.VIDEO_DECODER_IDLE_PUSH, Settings.Video.VIDEO_DECODER_IDLE_PUSH_DEFAULT_VALUE);
+        CheckBox decoderEarlyRelease = view.findViewById(R.id.videoDecoderEarlyRelease);
+        initCheckBox(decoderEarlyRelease, settings.video, Settings.Video.VIDEO_DECODER_EARLY_RELEASE, Settings.Video.VIDEO_DECODER_EARLY_RELEASE_DEFAULT_VALUE);
 
         CheckBox nvidiaLowBuffer = view.findViewById(R.id.videoDecoderNvidiaLowBuffer);
         initCheckBox(nvidiaLowBuffer, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_BUFFER, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_BUFFER_DEFAULT_VALUE);
