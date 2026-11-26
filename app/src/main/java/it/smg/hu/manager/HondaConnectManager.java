@@ -398,10 +398,13 @@ public class HondaConnectManager {
                 if (inForeground_ && settings_.advanced.keepSourceOnScreen()) {
                     // Media paused while the projection is on screen: it stays
                     // the head unit's source, as on a CarPlay or Android Auto
-                    // head unit. The steering wheel keys are delivered to the
-                    // current source, so Talk keeps reaching the phone instead
-                    // of starting the head unit's own Siri. Released when the
-                    // player leaves the screen (sendToBackground).
+                    // head unit. The key callbacks are registered on the
+                    // address of that source, and the head unit seems to
+                    // deliver the steering wheel keys to the current source
+                    // (not documented): keeping it should keep Talk reaching
+                    // the phone instead of starting the head unit's own Siri.
+                    // Released when the player leaves the screen
+                    // (sendToBackground).
                     if (Log.isDebug()) Log.d(TAG, "releaseAudioFocus -> kept: projection on screen");
                     return;
                 }

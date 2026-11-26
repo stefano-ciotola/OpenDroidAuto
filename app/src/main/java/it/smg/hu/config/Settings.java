@@ -660,7 +660,8 @@ public class Settings {
         /**
          * While the projection is on screen it stays the head unit's audio
          * source, even with the media paused, so the steering wheel keys keep
-         * reaching it (the head unit delivers them to the current source).
+         * reaching it (the head unit seems to deliver them to the current
+         * source).
          */
         public boolean keepSourceOnScreen() {
             return SP.getBoolean(ADVANCED_HONDA_KEEP_SOURCE, ADVANCED_HONDA_KEEP_SOURCE_DEFAULT_VALUE);
