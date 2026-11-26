@@ -587,13 +587,13 @@ public class HondaConnectManager {
 
     /**
      * Hides the clock that the Honda status bar service draws over full-screen
-     * apps, while the projection is in front. StatusBarExManager
-     * .setFullScreenClockDisplay() is part of the head unit framework. Calling
-     * it once from onResume was not enough: the clock came back. The service
-     * probably redraws it when the window gains focus or an audio source is
-     * announced (not confirmed), so the hide is re-applied after those events
-     * and a few times after it was requested, and the outcome is kept for the
-     * statistics overlay.
+     * apps, while the projection is in front. In the car,
+     * StatusBarExManager.setFullScreenClockDisplay(false) returned 0 on every
+     * call (16 of them) and the clock stayed, so each attempt now makes three
+     * calls of the head unit framework (see setFullScreenClockDisplay()). The
+     * hide is re-applied when the window gains focus, when an audio source is
+     * announced and a few times after it was requested, and the outcome of
+     * each call is kept for the statistics overlay.
      */
     public void hideFullScreenClock(){
         hideFullScreenClock_ = true;
@@ -639,23 +639,54 @@ public class HondaConnectManager {
         }
     };
 
+    // Header text while the projection is in front (requestDraw below).
+    private static final String SB_HEADER_TEXT = "Android Auto";
+
+    private interface StatusBarCall {
+        int call();
+    }
+
+    /**
+     * The three ways the head unit framework offers, each reported on its own:
+     * - "set": setFullScreenClockDisplay(), the full-screen clock setting;
+     * - "notify": notifyClockDisplaySettingsChanged(), which by its name tells
+     *   the status bar to read the clock settings again (the setting alone
+     *   changed nothing);
+     * - "draw": requestDraw(), the header request of the screen in front, with
+     *   the flags that hide the time (FLAG_TIME_HIDE, FLAG_TIME_HIDE_FULL_SCREEN).
+     * Parameter names and constants come from the framework's stubs; what each
+     * call does on the head unit is not documented.
+     */
     private void setFullScreenClockDisplay(boolean visible){
         final String action = visible ? "show" : "hide";
-        if (statusBarExManager_ == null) {
+        final StatusBarExManager statusBar = statusBarExManager_;
+        if (statusBar == null) {
             clockStatus_ = action + ": no status bar service";
             if (Log.isWarn()) Log.w(TAG, "setFullScreenClockDisplay: no status bar service");
             return;
         }
+        final String set = statusBarCall("setFullScreenClockDisplay", () -> statusBar.setFullScreenClockDisplay(visible));
+        final String notify = statusBarCall("notifyClockDisplaySettingsChanged", statusBar::notifyClockDisplaySettingsChanged);
+        // The header layout and function icon of an authorised third-party
+        // app, which is what this app is to the head unit (PREINSTALL).
+        final int flags = visible ? StatusBarExConst.FLAG_NONE_HIDE
+                : StatusBarExConst.FLAG_TIME_HIDE | StatusBarExConst.FLAG_TIME_HIDE_FULL_SCREEN;
+        final String draw = statusBarCall("requestDraw",
+                () -> statusBar.requestDraw(StatusBarExConst.DA_LAYOUT_3RD_PARTY_AUTH, SB_HEADER_TEXT,
+                        StatusBarExConst.FUNCTION_ICON_ID_3RD_PARTY_AUTH, null, flags));
+        clockCalls_++;
+        clockStatus_ = action + " set " + set + " notify " + notify + " draw " + draw + " x" + clockCalls_;
+        if (Log.isInfo()) Log.i(TAG, "clock " + clockStatus_);
+    }
+
+    private static String statusBarCall(String name, StatusBarCall call) {
         try {
-            int ret = statusBarExManager_.setFullScreenClockDisplay(visible);
-            clockCalls_++;
-            clockStatus_ = action + " ret " + ret + " x" + clockCalls_;
-            if (Log.isInfo()) Log.i(TAG, "setFullScreenClockDisplay(" + visible + ") ret= " + ret);
+            return String.valueOf(call.call());
         } catch (Throwable t) {
             // NoSuchMethodError on firmware without the call, RuntimeException
             // from a service that refuses it: either way keep the session going.
-            clockStatus_ = action + " failed: " + t.getClass().getSimpleName();
-            Log.w(TAG, "setFullScreenClockDisplay not available", t);
+            Log.w(TAG, name + " not available", t);
+            return t.getClass().getSimpleName();
         }
     }
 
