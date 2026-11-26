@@ -2,15 +2,18 @@ package it.smg.hu.manager;
 
 import android.annotation.SuppressLint;
 import android.app.Instrumentation;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.media.AudioTrack;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.widget.Toast;
 
 import com.fujitsu_ten.displayaudio.android.content.CustomContext;
@@ -45,7 +48,12 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import it.smg.hu.config.Settings;
+import it.smg.hu.manager.steering.HondaEventLog;
+import it.smg.hu.manager.steering.ProjectionReturnPolicy;
+import it.smg.hu.manager.steering.SteeringKeyRouter;
+import it.smg.hu.projection.InputDevice;
 import it.smg.hu.ui.PlayerActivity;
+import it.smg.hu.ui.settings.KeymapFragment;
 import it.smg.libs.aasdk.messenger.ChannelId;
 import it.smg.libs.aasdk.projection.ISensor;
 import it.smg.libs.common.Log;
@@ -118,7 +126,6 @@ public class HondaConnectManager {
     private final Context context_;
     private final Settings settings_;
 
-    private volatile boolean restoreActivity_;
     private volatile boolean isRunning_;
     private volatile boolean hasAudioFocus_;
     private volatile boolean hasAudioFocusForMic_;
@@ -140,6 +147,32 @@ public class HondaConnectManager {
     private final Handler mainHandler_;
     private ISensor.Listener dayNightListener_;
 
+    // Steering wheel keys, the return to the projection after the head unit
+    // took the screen, and what the statistics overlay shows about both.
+    private final HondaEventLog keyEvents_ = new HondaEventLog(4);
+    private final HondaEventLog headUnitEvents_ = new HondaEventLog(4);
+    private final SteeringKeyRouter steeringKeys_;
+    private final ProjectionReturnPolicy returnPolicy_;
+    private final Object headUnitLock_ = new Object();
+    // Last head unit state reported by the state manager; -1 until known.
+    private int siriState_ = -1;
+    private int voiceTagState_ = -1;
+    private int hftState_ = -1;
+    private int hftPopup_ = -1;
+    private int videoAddress_ = -1;
+    private int audioAddress_ = -1;
+    private final Object btVoiceReceiverLock_ = new Object();
+    private BroadcastReceiver btVoiceReceiver_;
+    // Media is playing (between MediaAudioOutput start and stop).
+    private volatile boolean mediaPlaying_;
+
+    // Optional (Advanced > Honda, off by default): hold the Bluetooth voice
+    // control rights while the projection is on screen, in case the head unit
+    // needs them to start Siri over Bluetooth hands-free.
+    private BluetoothVrListener voiceGuardListener_;
+    private boolean voiceRightsHeld_;
+    private volatile String voiceGuardStatus_ = "off";
+
     public static void init(Context context){
         instance_ = new HondaConnectManager(context);
     }
@@ -157,8 +190,46 @@ public class HondaConnectManager {
         hasAudioFocusForMic_ = false;
         micVrStarted_ = false;
         isRunning_ = false;
-        restoreActivity_ = false;
         mainHandler_ = new Handler(Looper.getMainLooper());
+        steeringKeys_ = new SteeringKeyRouter(new SteeringKeyRouter.Output() {
+            @Override
+            public boolean projectionRunning() {
+                // The key map screen learns keys from its window, even while
+                // a projection runs in the background.
+                return InputDevice.projectionRunning() && !KeymapFragment.isOnScreen();
+            }
+
+            @Override
+            public boolean mapped(int keymapCode) {
+                return InputDevice.isMapped(keymapCode);
+            }
+
+            @Override
+            public boolean toProjection(int keymapCode) {
+                return InputDevice.sendSteeringKey(keymapCode);
+            }
+
+            @Override
+            public boolean injectIntoWindow(int strgCode) {
+                return injectKey(strgCode);
+            }
+        }, SystemClock::elapsedRealtime);
+        returnPolicy_ = new ProjectionReturnPolicy(new ProjectionReturnPolicy.Actions() {
+            @Override
+            public void restoreProjection(String cause) {
+                mainHandler_.post(() -> bringProjectionToFront(cause));
+            }
+
+            @Override
+            public void schedule(Runnable task, long delayMs) {
+                mainHandler_.postDelayed(task, delayMs);
+            }
+
+            @Override
+            public void cancel(Runnable task) {
+                mainHandler_.removeCallbacks(task);
+            }
+        }, SystemClock::elapsedRealtime);
         modeMgrExecutor_ = Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, MODE_MGR_THREAD_NAME);
             thread.setDaemon(true);
@@ -324,16 +395,43 @@ public class HondaConnectManager {
                 if (!isRunning_ || !hasAudioFocus_ || modeMgrManager_ == null) {
                     return;
                 }
+                if (inForeground_ && settings_.advanced.keepSourceOnScreen()) {
+                    // Media paused while the projection is on screen: it stays
+                    // the head unit's source, as on a CarPlay or Android Auto
+                    // head unit. The steering wheel keys are delivered to the
+                    // current source, so Talk keeps reaching the phone instead
+                    // of starting the head unit's own Siri. Released when the
+                    // player leaves the screen (sendToBackground).
+                    if (Log.isDebug()) Log.d(TAG, "releaseAudioFocus -> kept: projection on screen");
+                    return;
+                }
                 releaseFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
                 if (isRunning_) {
                     requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
                 }
 
                 unregisterSteeringMenuCallback();
-                unregisterModeMgrSWCallbacks();
+                // Media paused does not mean the user stopped using the
+                // projection: while it is on screen the steering wheel keys
+                // must keep reaching it.
+                if (!inForeground_) {
+                    unregisterModeMgrSWCallbacks();
+                }
                 notifySteeringMenuDispMode(0);
             });
         }
+    }
+
+    /** Android Auto media started (MediaAudioOutput.start). */
+    public void onMediaStarted(){
+        mediaPlaying_ = true;
+        requestAudioFocus();
+    }
+
+    /** Android Auto media stopped or was suspended (MediaAudioOutput.stop/suspend). */
+    public void onMediaStopped(){
+        mediaPlaying_ = false;
+        releaseAudioFocus();
     }
 
     private void requestFocus(int idx, int mode){
@@ -401,12 +499,16 @@ public class HondaConnectManager {
 
     public void increaseVolume(){
         if (Log.isDebug()) Log.d(TAG, "increaseVolume");
-        modeMgrManager_.reqModeMgrSteeringVolCmd(true);
+        if (modeMgrManager_ != null) {
+            modeMgrManager_.reqModeMgrSteeringVolCmd(true);
+        }
     }
 
     public void decreaseVolume(){
         if (Log.isDebug()) Log.d(TAG, "decreaseVolume");
-        modeMgrManager_.reqModeMgrSteeringVolCmd(false);
+        if (modeMgrManager_ != null) {
+            modeMgrManager_.reqModeMgrSteeringVolCmd(false);
+        }
     }
 
     // Used in onCreate
@@ -448,6 +550,12 @@ public class HondaConnectManager {
                 registerSteeringMenuCallback();
                 registerModeMgrSWCallbacks();
                 notifySteeringMenuDispMode(1);
+            } else if (settings_.advanced.keepSourceOnScreen()) {
+                // On screen the projection is the head unit's source (see
+                // releaseAudioFocus), so the steering wheel keys reach it
+                // before any music has played.
+                registerModeMgrSWCallbacks();
+                requestAudioFocus();
             } else {
                 requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
                 registerModeMgrSWCallbacks();
@@ -463,11 +571,12 @@ public class HondaConnectManager {
     /**
      * Hides the clock that the Honda status bar service draws over full-screen
      * apps, while the projection is in front. StatusBarExManager
-     * .setFullScreenClockDisplay() is part of the head unit framework; calling
-     * it once from onResume was not enough, because the service redraws the
-     * clock when the window gains focus and when an audio source is announced.
-     * So the hide is re-applied after those events and a few times after it
-     * was requested, and the outcome is kept for the statistics overlay.
+     * .setFullScreenClockDisplay() is part of the head unit framework. Calling
+     * it once from onResume was not enough: the clock came back. The service
+     * probably redraws it when the window gains focus or an audio source is
+     * announced (not confirmed), so the hide is re-applied after those events
+     * and a few times after it was requested, and the outcome is kept for the
+     * statistics overlay.
      */
     public void hideFullScreenClock(){
         hideFullScreenClock_ = true;
@@ -540,6 +649,37 @@ public class HondaConnectManager {
         unregisterSteeringMenuCallback();
         unregisterModeMgrSWCallbacks();
         notifySteeringMenuDispMode(0);
+
+        // The source was kept only because the projection was on screen:
+        // give it back, so the head unit's previous source plays again, as it
+        // did when the media paused.
+        if (isPreinstall() && modeMgrManager_ != null && !mediaPlaying_ && settings_.advanced.keepSourceOnScreen()) {
+            runOnModeMgrExecutor(() -> {
+                if (!isRunning_ || inForeground_ || mediaPlaying_ || !hasAudioFocus_ || modeMgrManager_ == null) {
+                    return;
+                }
+                if (Log.isDebug()) Log.d(TAG, "sendToBackground -> release the source kept while on screen");
+                releaseFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
+            });
+        }
+    }
+
+    /**
+     * The player screen came to the front (true) or left it (false). Drives
+     * the return to the projection after a head unit interruption and the
+     * optional Bluetooth voice guard.
+     */
+    public void onPlayerVisible(boolean visible){
+        returnPolicy_.setEnabled(settings_.advanced.returnToProjection());
+        if (visible) {
+            returnPolicy_.onProjectionRunning(true);
+        }
+        returnPolicy_.onPlayerVisible(visible);
+        if (visible) {
+            registerBtVoiceReceiver();
+            runOnModeMgrExecutor(this::refreshHeadUnitState);
+        }
+        runOnModeMgrExecutor(() -> updateVoiceGuard(visible));
     }
 
     public void endAudioBinding(){
@@ -547,7 +687,10 @@ public class HondaConnectManager {
 
         inForeground_ = false;
         isRunning_ = false;
-        restoreActivity_ = false;
+        mediaPlaying_ = false;
+        returnPolicy_.onProjectionRunning(false);
+        unregisterBtVoiceReceiver();
+        runOnModeMgrExecutor(() -> updateVoiceGuard(false));
         stopMicSessionInternal();
 
         if (isPreinstall()){
@@ -978,7 +1121,7 @@ public class HondaConnectManager {
         changeInfo.steeringPopUpC = false;
         changeInfo.audioLauncherC = false;
         changeInfo.iMidC = false;
-        changeInfo.hftPopupC = false;
+        changeInfo.hftPopupC = true;
         changeInfo.screenOffC = true;
         changeInfo.usbPopupC = false;
         changeInfo.parkingSensorC = false;
@@ -990,7 +1133,9 @@ public class HondaConnectManager {
         changeInfo.videoResumeCompletedC = false;
         changeInfo.lastAudioAddressC = false;
         changeInfo.audioResumeCompletedC = false;
-        changeInfo.hftStateC = false;
+        changeInfo.hftStateC = true;
+        changeInfo.siriStateC = true;
+        changeInfo.voiceTagStateC = true;
         changeInfo.steeringDispKeyC = false;
         changeInfo.headerInterruptC = false;
 
@@ -1184,6 +1329,264 @@ public class HondaConnectManager {
         });
     }
 
+    // ---- Steering wheel keys
+
+    private SteeringKeyRouter.Result onSteeringKey(SteeringKeyRouter.Source source, int first, int second) {
+        final SteeringKeyRouter.Result result = steeringKeys_.onKey(source, first, second);
+        keyEvents_.add(result.toString());
+        if (Log.isInfo()) Log.i(TAG, "steering key " + result);
+        return result;
+    }
+
+    /** Injects a key into this app's window, which is how the key map screen learns keys. */
+    private boolean injectKey(int keyCode) {
+        if (!inForeground_) {
+            // The focused window belongs to another app: it must not get it.
+            return false;
+        }
+        try {
+            new Instrumentation().sendKeyDownUpSync(keyCode);
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "could not inject key " + keyCode, e);
+            return false;
+        }
+    }
+
+    // ---- Head unit state, the return to the projection and the overlay
+
+    private void refreshHeadUnitState() {
+        if (stateMgrManager_ == null) {
+            return;
+        }
+        try {
+            StateMgrInfo info = stateMgrManager_.getAllState();
+            if (info != null) {
+                onHeadUnitState(info, null);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "could not read the head unit state", e);
+        }
+    }
+
+    /** A state manager report; changed == null takes every field (a full read). */
+    private void onHeadUnitState(StateMgrInfo info, StateMgrChangeInfo changed) {
+        synchronized (headUnitLock_) {
+            if (changed == null || changed.siriStateC) siriState_ = noteState("siri", siriState_, info.siriState);
+            if (changed == null || changed.voiceTagStateC) voiceTagState_ = noteState("voice", voiceTagState_, info.voiceTagState);
+            if (changed == null || changed.hftStateC) hftState_ = noteState("call", hftState_, info.hftState);
+            if (changed == null || changed.hftPopupC) hftPopup_ = noteState("popup", hftPopup_, info.hftPopup);
+            if (changed == null || changed.videoAddressC) videoAddress_ = noteState("v", videoAddress_, info.videoAddress);
+            if (changed == null || changed.audioAddressC) audioAddress_ = noteState("a", audioAddress_, info.audioAddress);
+
+            returnPolicy_.onHeadUnitState(
+                    siriState_ == StateMgrServiceConst.STATE_SIRI_ON,
+                    voiceTagState_ == StateMgrServiceConst.STATE_VOICETAG_ON,
+                    hftState_ > 0 || hftPopup_ > 0,
+                    videoAddress_);
+        }
+    }
+
+    private int noteState(String name, int previous, int value) {
+        // Changes only: the first read is the starting point, not an event.
+        if (previous != -1 && previous != value) {
+            headUnitEvents_.add(name + " " + value);
+            if (Log.isInfo()) Log.i(TAG, "head unit " + name + " " + previous + " -> " + value);
+        }
+        return value;
+    }
+
+    private void bringProjectionToFront(String cause) {
+        if (!isRunning_) {
+            return;
+        }
+        headUnitEvents_.add("back to AA (" + cause + ")");
+        if (Log.isInfo()) Log.i(TAG, "bringing the projection back after " + cause);
+        try {
+            Intent i = new Intent(context_, PlayerActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            context_.startActivity(i);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "could not bring the projection back", e);
+        }
+    }
+
+    /**
+     * Three lines for the statistics overlay: the head unit state and what
+     * this app does with it, the last steering wheel keys (newest first, with
+     * the callback they came on and where they went), the last head unit
+     * events.
+     */
+    public String steeringStatus() {
+        final StringBuilder text = new StringBuilder("hu ");
+        synchronized (headUnitLock_) {
+            text.append('a').append(audioAddress_).append(" v").append(videoAddress_);
+            if (siriState_ == StateMgrServiceConst.STATE_SIRI_ON) text.append(" siri");
+            if (voiceTagState_ == StateMgrServiceConst.STATE_VOICETAG_ON) text.append(" voice");
+            if (hftState_ > 0) text.append(" call").append(hftState_);
+            if (hftPopup_ > 0) text.append(" popup");
+        }
+        text.append(" | src ").append(!hasAudioFocus_ ? "-" : mediaPlaying_ ? "playing" : "kept");
+        text.append(" | keys ").append(modeMgrServiceSWKeyEventCallBack_ != null ? "on" : "off");
+        text.append(" | back ").append(returnPolicy_.describe());
+        text.append(" | mic ").append(!settings_.advanced.hondaMicVrEnabled() ? "off"
+                : settings_.advanced.useBtMicVr() ? "bt" : "ecnc");
+        text.append(" | bt-guard ").append(voiceGuardStatus_);
+        final String keys = keyEvents_.joined();
+        text.append("\nhu-keys ").append(keys.isEmpty() ? "-" : keys);
+        final String events = headUnitEvents_.joined();
+        text.append("\nhu-evt ").append(events.isEmpty() ? "-" : events);
+        return text.toString();
+    }
+
+    // ---- Bluetooth voice: what the head unit does, and the optional guard
+
+    // From the head unit framework: SiriAtCommandListener.ACTION_SIRI_STATUS,
+    // EXTRA_SIRI_STATUS, SIRI_ACTIVE, SIRI_NOT_ACTIVE; BluetoothVr
+    // .ACTION_BVRA_START, API_OK.
+    private static final String ACTION_SIRI_STATUS = "com.fujitsu_ten.displayaudio.bluetooth.handsfree.action.SIRI_STATUS";
+    private static final String EXTRA_SIRI_STATUS = "com.fujitsu_ten.displayaudio.bluetooth.handsfree.extra.SIRI_STATUS";
+    private static final int SIRI_ACTIVE = 1;
+    private static final int SIRI_NOT_ACTIVE = 2;
+    private static final String ACTION_BVRA_START = "com.fujitsu_ten.displayaudio.bluetooth.vr.action.ACTION_BVRA_START";
+    private static final int BT_VR_API_OK = 0;
+
+    /** Notes when the head unit reports Siri over Bluetooth or a voice recognition start. Diagnostics only. */
+    private void registerBtVoiceReceiver() {
+        synchronized (btVoiceReceiverLock_) {
+            if (btVoiceReceiver_ != null) {
+                return;
+            }
+            final BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    final String event;
+                    if (ACTION_SIRI_STATUS.equals(intent.getAction())) {
+                        final int status = intent.getIntExtra(EXTRA_SIRI_STATUS, -1);
+                        event = "bt-siri " + (status == SIRI_ACTIVE ? "on" : status == SIRI_NOT_ACTIVE ? "off" : String.valueOf(status));
+                    } else {
+                        event = "bvra";
+                    }
+                    headUnitEvents_.add(event);
+                    if (Log.isInfo()) Log.i(TAG, "bluetooth voice: " + event);
+                }
+            };
+            final IntentFilter filter = new IntentFilter();
+            filter.addAction(ACTION_SIRI_STATUS);
+            filter.addAction(ACTION_BVRA_START);
+            try {
+                context_.registerReceiver(receiver, filter);
+                btVoiceReceiver_ = receiver;
+            } catch (RuntimeException e) {
+                Log.w(TAG, "could not listen for the Bluetooth voice status", e);
+            }
+        }
+    }
+
+    private void unregisterBtVoiceReceiver() {
+        synchronized (btVoiceReceiverLock_) {
+            if (btVoiceReceiver_ == null) {
+                return;
+            }
+            try {
+                context_.unregisterReceiver(btVoiceReceiver_);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Bluetooth voice receiver was not registered", e);
+            }
+            btVoiceReceiver_ = null;
+        }
+    }
+
+    /**
+     * Advanced > Honda, experimental and off by default: while the projection
+     * is on screen, hold the Bluetooth voice control rights, in case the head
+     * unit needs them to start Siri over Bluetooth hands-free when it handles
+     * Talk itself. Not used with the Bluetooth microphone, which needs the
+     * rights for its own voice session. Runs on the mode manager thread.
+     */
+    private void updateVoiceGuard(boolean visible) {
+        final boolean enabled = settings_.advanced.blockHondaBtVoice();
+        final boolean btMic = settings_.advanced.useBtMicVr();
+        final boolean wanted = visible && isRunning_ && enabled && !btMic;
+        synchronized (micLock_) {
+            if (wanted == voiceRightsHeld_) {
+                if (!wanted) {
+                    voiceGuardStatus_ = !enabled ? "off" : btMic ? "off: bt mic" : "idle";
+                }
+                return;
+            }
+            try {
+                final BluetoothVr vr = BluetoothVr.getInstance();
+                if (vr == null) {
+                    voiceGuardStatus_ = "no bt vr";
+                    return;
+                }
+                if (voiceGuardListener_ == null) {
+                    voiceGuardListener_ = new VoiceGuardListener();
+                }
+                if (wanted) {
+                    final int ret = vr.getVoiceControlRights(voiceGuardListener_);
+                    voiceRightsHeld_ = ret == BT_VR_API_OK;
+                    voiceGuardStatus_ = (voiceRightsHeld_ ? "holding" : "refused") + " ret " + ret;
+                } else {
+                    final int ret = vr.releaseVoiceControlRights(voiceGuardListener_);
+                    voiceRightsHeld_ = false;
+                    voiceGuardStatus_ = "released ret " + ret;
+                }
+            } catch (Throwable t) {
+                // Firmware without the call, or a service that refuses it.
+                voiceRightsHeld_ = false;
+                voiceGuardStatus_ = "failed: " + t.getClass().getSimpleName();
+                Log.w(TAG, "Bluetooth voice guard", t);
+            }
+            headUnitEvents_.add("bt-guard " + voiceGuardStatus_);
+            if (Log.isInfo()) Log.i(TAG, "Bluetooth voice guard: " + voiceGuardStatus_);
+        }
+    }
+
+    private final class VoiceGuardListener implements BluetoothVrListener {
+
+        @Override
+        public void onErrorOccurred(int type, int code) {
+            note("error " + type + "/" + code);
+        }
+
+        @Override
+        public void onRequestSamplingRateChange(int rate) {
+            // Whoever holds the rights confirms the change, or the audio link
+            // waits for it.
+            try {
+                BluetoothVr vr = BluetoothVr.getInstance();
+                if (vr != null) {
+                    vr.completeSamplingRateChange(rate);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "completeSamplingRateChange", t);
+            }
+            note("rate " + rate);
+        }
+
+        @Override
+        public void onScoChanged(int scoStatus, int samplingRate) {
+            note("sco " + scoStatus);
+        }
+
+        @Override
+        public void onVoiceControlRightsNotification(int value) {
+            note("rights " + value);
+        }
+
+        @Override
+        public void onVoiceControlRightsResponse(int value) {
+            note("rights resp " + value);
+        }
+
+        private void note(String event) {
+            headUnitEvents_.add("bt-guard " + event);
+            if (Log.isInfo()) Log.i(TAG, "Bluetooth voice guard: " + event);
+        }
+    }
+
     private class ModeMgrServiceSWKeyEventCallBack extends IModeMgrServiceSWKeyEventCallBack.Stub {
 
         private static final String TAG = "HondaConnectManager-ModeMgrServiceSWKeyEventCallBack";
@@ -1191,8 +1594,7 @@ public class HondaConnectManager {
         @Override
         public void rcvStrgKeyEvent(int i, int i1) throws RemoteException {
             if (Log.isDebug()) Log.d(TAG, "rcvStrgKeyEvent  " + i + "/" + i1);
-            Instrumentation instrumentation = new Instrumentation();
-            instrumentation.sendKeyDownUpSync(i);
+            onSteeringKey(SteeringKeyRouter.Source.KEY_EVENT, i, i1);
         }
     };
 
@@ -1203,8 +1605,7 @@ public class HondaConnectManager {
         @Override
         public void rcvKeyInspecCmd(int i, int i1) throws RemoteException {
             if (Log.isDebug()) Log.d(TAG, "rcvKeyInspecCmd  " + i + "/" + i1);
-            Instrumentation instrumentation = new Instrumentation();
-            instrumentation.sendKeyDownUpSync(i);
+            onSteeringKey(SteeringKeyRouter.Source.INSPECTION, i, i1);
         }
     }
 
@@ -1214,8 +1615,7 @@ public class HondaConnectManager {
         @Override
         public void rcvStrgKeyCmd(int i) throws RemoteException {
             if (Log.isDebug()) Log.d(TAG, "rcvStrgKeyCmd  " + i);
-            Instrumentation instrumentation = new Instrumentation();
-            instrumentation.sendKeyDownUpSync(i);
+            onSteeringKey(SteeringKeyRouter.Source.PHONE, i, 0);
         }
     };
 
@@ -1236,16 +1636,9 @@ public class HondaConnectManager {
 
         public boolean onSteeringSWDown(int keytype) {
             if (Log.isDebug()) Log.d(TAG, "onSteeringSWDown " + keytype);
-//            if (Log.isVerbose()){
-//                mainHandler_.post(() -> {
-//                    Toast.makeText(context_, "onSteeringSWDown keytype= " + keytype, Toast.LENGTH_SHORT).show();
-//                });
-//            }
-
-            Instrumentation instrumentation = new Instrumentation();
-            instrumentation.sendKeyDownUpSync(keytype);
-
-            return true;
+            // True tells the steering menu service the key was used; keys
+            // Android Auto has no use for stay with the head unit.
+            return onSteeringKey(SteeringKeyRouter.Source.STEERING_MENU, keytype, 0).consumed();
         }
     };
 
@@ -1260,40 +1653,9 @@ public class HondaConnectManager {
 
             dumpStateMgr(info);
 
-            if (changed.videoAddressC){
-                if (Log.isDebug()) Log.d(TAG, "videoAddress=" + info.videoAddress);
-                if (Log.isDebug()) Log.d(TAG, "lastVideoAddress=" + info.lastVideoAddress);
-
-                if ((info.videoAddress == 92 || info.videoAddress == 87 || info.videoAddress == 198) && isRunning_) {
-                    if (Log.isDebug()) {
-                        Log.d(TAG, "temporary Honda video interruption (" + info.videoAddress + ") -> restore activity after");
-                        printToast("videoAddress " + info.videoAddress + " -> activating rear camera / call");
-                    }
-
-                    restoreActivity_ = true;
-
-                } else if (isRunning_ && restoreActivity_
-                        && info.videoAddress != 92 && info.videoAddress != 87
-                        && info.videoAddress != 198 && info.videoAddress != 255) {
-                    if (Log.isDebug()) {
-                        Log.d(TAG, "coming back from reverse camera or call -> restore activity");
-                        printToast("videoAddress " + info.videoAddress + " -> restore activity");
-                    }
-
-                    restoreActivity_ = false;
-                    mainHandler_.postDelayed(() -> {
-                        if (!isRunning_) {
-                            return;
-                        }
-                        if (Log.isDebug()) {
-                            Toast.makeText(context_, "restoring PlayerActivity", Toast.LENGTH_SHORT).show();
-                        }
-
-                        Intent i = new Intent(context_, PlayerActivity.class);
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        context_.startActivity(i);
-                    }, 500);
-                }
+            if (changed.videoAddressC || changed.audioAddressC || changed.siriStateC
+                    || changed.voiceTagStateC || changed.hftStateC || changed.hftPopupC) {
+                onHeadUnitState(info, changed);
             }
 
             if (changed.dayNightStateC) {

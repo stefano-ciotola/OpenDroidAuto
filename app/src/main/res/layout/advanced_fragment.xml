@@ -44,6 +44,12 @@
         <View style="@style/SettingsDivider" android:tag="divider" />
         <CheckBox android:id="@+id/enable_hondaimid" style="@style/SettingsSwitch" android:text="@string/advanced_settings_enablehondaimid" />
         <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/honda_keep_source" style="@style/SettingsSwitch" android:text="@string/advanced_settings_honda_keep_source" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/honda_return_to_projection" style="@style/SettingsSwitch" android:text="@string/advanced_settings_honda_return_to_projection" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/honda_block_bt_voice" style="@style/SettingsSwitch" android:text="@string/advanced_settings_honda_block_bt_voice" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
         <LinearLayout style="@style/SettingsFieldRow">
             <TextView style="@style/SettingsFieldLabel" android:tag="label" android:labelFor="@id/modemgraudiovideo_idx" android:text="@string/advanced_settings_modeMgrAudioVideoIdx" />
             <EditText android:id="@+id/modemgraudiovideo_idx" style="@style/SettingsFieldValue" android:imeOptions="actionDone" android:inputType="number" android:maxLines="1" />

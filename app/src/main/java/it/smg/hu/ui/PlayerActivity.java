@@ -58,6 +58,10 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
             if (clockStatus != null) {
                 text += "\nhu-clock " + clockStatus;
             }
+            HondaConnectManager honda = hondaManager();
+            if (honda != null) {
+                text += "\n" + honda.steeringStatus();
+            }
             statsView_.setText(text);
             statsHandler_.postDelayed(this, STATS_REFRESH_MS);
         }
@@ -175,6 +179,7 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         HondaConnectManager hondaManager = hondaManager();
         if (hondaManager != null){
             hondaManager.initAudioBinding();
+            hondaManager.onPlayerVisible(true);
             if (Settings.instance().car.hideHeadUnitClock()) {
                 hondaManager.hideFullScreenClock();
                 clockHiddenBy_ = hondaManager;
@@ -237,6 +242,7 @@ public class PlayerActivity extends Activity implements ServiceConnection, Surfa
         HondaConnectManager hondaManager = hondaManager();
         if (hondaManager != null){
             hondaManager.sendToBackground();
+            hondaManager.onPlayerVisible(false);
         }
 
         // The projection exit must always return to the dashboard cleanly.  A

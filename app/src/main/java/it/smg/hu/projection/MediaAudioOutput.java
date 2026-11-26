@@ -33,7 +33,7 @@ public class MediaAudioOutput extends AudioOutput {
         HondaConnectManager hondaManager = hondaManager();
         if (hondaManager != null){
             if (Log.isDebug()) Log.d(TAG, "requestAudioFocus");
-            hondaManager.requestAudioFocus();
+            hondaManager.onMediaStarted();
         }
 
         super.start();
@@ -44,7 +44,7 @@ public class MediaAudioOutput extends AudioOutput {
         HondaConnectManager hondaManager = hondaManager();
         if (hondaManager != null){
             if (Log.isDebug()) Log.d(TAG, "releaseAudioFocus");
-            hondaManager.releaseAudioFocus();
+            hondaManager.onMediaStopped();
         }
 
         super.stop();
@@ -55,7 +55,7 @@ public class MediaAudioOutput extends AudioOutput {
         HondaConnectManager hondaManager = hondaManager();
         if (hondaManager != null){
             if (Log.isDebug()) Log.d(TAG, "releaseAudioFocus");
-            hondaManager.releaseAudioFocus();
+            hondaManager.onMediaStopped();
         }
 
         super.suspend();

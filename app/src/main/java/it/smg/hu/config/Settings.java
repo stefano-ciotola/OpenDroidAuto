@@ -565,6 +565,9 @@ public class Settings {
         public final static String ADVANCED_MODEMGRAUDIOVIDEO_IDX = "modemgraudiovideoidx";
         public final static String ADVANCED_MODEMGRVIDEO_IDX = "modemgrvideoidx";
         public final static String ADVANCED_SW_IDX = "steeringwheelidx";
+        public final static String ADVANCED_HONDA_KEEP_SOURCE = "hondakeepsourceonscreen";
+        public final static String ADVANCED_HONDA_RETURN_TO_PROJECTION = "hondareturntoprojection";
+        public final static String ADVANCED_HONDA_BLOCK_BT_VOICE = "hondablockbtvoice";
 
         public final static boolean ADVANCED_ENABLED_DEBUG_DEFAULT_VALUE = false;
         public final static String ADVANCED_LOG_DIR_DEFAULT_VALUE = "/mnt/sdcard/usbdrive2/ODA-fork/";
@@ -576,6 +579,9 @@ public class Settings {
         public final static boolean ADVANCED_ENABLE_HONDA_MIC_VR_DEFAULT_VALUE = true;
         public final static boolean ADVANCED_USE_BT_MIC_VR_DEFAULT_VALUE = false;
         public final static boolean ADVANCED_ENABLE_HONDA_IMID_DEFAULT_VALUE = false;
+        public final static boolean ADVANCED_HONDA_KEEP_SOURCE_DEFAULT_VALUE = true;
+        public final static boolean ADVANCED_HONDA_RETURN_TO_PROJECTION_DEFAULT_VALUE = true;
+        public final static boolean ADVANCED_HONDA_BLOCK_BT_VOICE_DEFAULT_VALUE = false;
         public final static String ADVANCED_SW_MODE_DEFAULT_VALUE = "SW SERVICE";
         public final static int ADVANCED_MODEMGRAUDIOVIDEO_IDX_DEFAULT_VALUE = 197; // 223 appmode, 220 appmodepic, 213 3rd party, 214 3rd party pic, 197 bt, 92 cam, 98 cd, 196 dab, 216 hdmi, 201 ipod, 222 mirrolink, 221 mirrorlink pic, 255 off, 87 phone, 198 tel rcv, 199 usb audio, 133 voicetag, 136 siri, 96 radio
         public final static int ADVANCED_MODEMGRVIDEO_IDX_DEFAULT_VALUE = 133; // 223 appmode, 220 appmodepic, 213 3rd party, 214 3rd party pic, 197 bt, 92 cam, 98 cd, 196 dab, 216 hdmi, 201 ipod, 222 mirrolink, 221 mirrorlink pic, 255 off, 87 phone, 198 tel rcv, 199 usb audio, 133 voicetag, 136 siri, 96 radio
@@ -649,6 +655,25 @@ public class Settings {
 
         public boolean useBtMicVr() {
             return SP.getBoolean(ADVANCED_USE_BT_MIC_VR, ADVANCED_USE_BT_MIC_VR_DEFAULT_VALUE);
+        }
+
+        /**
+         * While the projection is on screen it stays the head unit's audio
+         * source, even with the media paused, so the steering wheel keys keep
+         * reaching it (the head unit delivers them to the current source).
+         */
+        public boolean keepSourceOnScreen() {
+            return SP.getBoolean(ADVANCED_HONDA_KEEP_SOURCE, ADVANCED_HONDA_KEEP_SOURCE_DEFAULT_VALUE);
+        }
+
+        /** Bring the projection back after a call, the reverse camera, Siri or the Honda voice commands. */
+        public boolean returnToProjection() {
+            return SP.getBoolean(ADVANCED_HONDA_RETURN_TO_PROJECTION, ADVANCED_HONDA_RETURN_TO_PROJECTION_DEFAULT_VALUE);
+        }
+
+        /** Experimental: hold the Bluetooth voice control rights while the projection is on screen. */
+        public boolean blockHondaBtVoice() {
+            return SP.getBoolean(ADVANCED_HONDA_BLOCK_BT_VOICE, ADVANCED_HONDA_BLOCK_BT_VOICE_DEFAULT_VALUE);
         }
 
         public void useBtMicVr(boolean enabled) {
