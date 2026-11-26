@@ -100,7 +100,8 @@ void OMXVideoCodec::init_omxDecoderThread() {
         Log_i("could not raise the decoder thread priority");
     }
 
-    omxSource_ = new OMXSource(screenSize_.width, screenSize_.height, fps_, options_.legacyDrop);
+    omxSource_ = new OMXSource(screenSize_.width, screenSize_.height, fps_, options_.legacyDrop,
+                               options_.idlePush);
 
     if (Log::isDebug()) Log_d("Created OMXSource %p", omxSource_);
 
@@ -111,7 +112,8 @@ void OMXVideoCodec::init_omxDecoderThread() {
 
     std::string summary = omxDecoder_->summary();
     summary += std::string(" | legacy-drop ") + (options_.legacyDrop ? "on" : "off");
-    summary += std::string(" | sps-patch ") + (options_.spsLowLatency ? "on" : "off");
+    summary += std::string(" | sps-patch ") + (options_.spsLowLatency ? (options_.spsLevel31 ? "on+level" : "on") : "off");
+    summary += std::string(" | push ") + (options_.idlePush ? "on" : "off");
     if (Log::isInfo()) Log_i("decoder options: %s", summary.c_str());
     VideoStats::instance().setDecoderSummary(summary);
 
@@ -193,7 +195,8 @@ bool OMXVideoCodec::rewriteSps(const uint8_t* data, std::size_t size, std::vecto
     bool sawSps = false;
     h264::SpsInfo info;
     h264::SpsPatch result = h264::SpsPatch::Invalid;
-    const bool changed = h264::patchAccessUnit(data, size, patched, &sawSps, &info, &result);
+    const int minLevel = options_.spsLevel31 ? 31 : 0;
+    const bool changed = h264::patchAccessUnit(data, size, patched, &sawSps, &info, &result, minLevel);
     if (!sawSps) {
         return false;
     }
@@ -201,7 +204,7 @@ bool OMXVideoCodec::rewriteSps(const uint8_t* data, std::size_t size, std::vecto
     std::string summary = "SPS ";
     summary += result == h264::SpsPatch::Invalid ? "unreadable" : h264::describeSps(info);
     summary += " | ";
-    summary += options_.spsLowLatency ? h264::describePatch(result) : "patch off";
+    summary += options_.spsLowLatency ? h264::describePatch(result, minLevel) : "patch off";
     if (summary != streamSummary_) {
         streamSummary_ = summary;
         if (Log::isInfo()) Log_i("%s", summary.c_str());

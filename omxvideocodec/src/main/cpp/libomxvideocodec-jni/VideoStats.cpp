@@ -370,6 +370,7 @@ void VideoStats::resetLocked() {
     droppedTotal_ = 0;
     keyFrames_ = 0;
     lastKeyFrameBytes_ = 0;
+    pushTotal_ = 0;
     streamSummary_.clear();
 }
 
@@ -390,6 +391,14 @@ void VideoStats::onKeyFrame(size_t bytes) {
     std::lock_guard<std::mutex> lock(mutex_);
     ++keyFrames_;
     lastKeyFrameBytes_ = bytes;
+}
+
+void VideoStats::onPush() {
+    if (!enabled()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    ++pushTotal_;
 }
 
 void VideoStats::onReceived(size_t bytes, int64_t timestampUs) {
@@ -502,6 +511,7 @@ void VideoStats::run() {
         uint64_t droppedTotal;
         uint64_t keyFrames;
         size_t lastKeyFrameBytes;
+        uint64_t pushTotal;
         std::string summary;
         std::string stream;
         {
@@ -512,6 +522,7 @@ void VideoStats::run() {
             droppedTotal = droppedTotal_;
             keyFrames = keyFrames_;
             lastKeyFrameBytes = lastKeyFrameBytes_;
+            pushTotal = pushTotal_;
             summary = decoderSummary_;
             stream = streamSummary_;
             // A frame that has been waiting since the last arrival is a gap too:
@@ -558,10 +569,17 @@ void VideoStats::run() {
         if (!summary.empty()) {
             report += "\n" + summary;
         }
-        char keyFrameText[48];
-        snprintf(keyFrameText, sizeof(keyFrameText), " | IDR %llu last %u KB",
-                 static_cast<unsigned long long>(keyFrames),
-                 static_cast<unsigned>((lastKeyFrameBytes + 512) / 1024));
+        char keyFrameText[80];
+        if (pushTotal > 0) {
+            snprintf(keyFrameText, sizeof(keyFrameText), " | IDR %llu last %u KB | push %llu",
+                     static_cast<unsigned long long>(keyFrames),
+                     static_cast<unsigned>((lastKeyFrameBytes + 512) / 1024),
+                     static_cast<unsigned long long>(pushTotal));
+        } else {
+            snprintf(keyFrameText, sizeof(keyFrameText), " | IDR %llu last %u KB",
+                     static_cast<unsigned long long>(keyFrames),
+                     static_cast<unsigned>((lastKeyFrameBytes + 512) / 1024));
+        }
         report += "\n" + (stream.empty() ? std::string("SPS -") : stream) + keyFrameText;
 
         if (Log::isInfo()) {

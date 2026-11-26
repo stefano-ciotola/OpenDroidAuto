@@ -56,7 +56,15 @@
         <View style="@style/SettingsDivider" android:tag="divider" />
         <CheckBox android:id="@+id/videoDecoderSpsLowLatency" style="@style/SettingsSwitch" android:text="@string/video_decoder_sps_low_latency" />
         <View style="@style/SettingsDivider" android:tag="divider" />
-        <CheckBox android:id="@+id/videoDecoderNvidiaLowLatency" style="@style/SettingsSwitch" android:text="@string/video_decoder_nvidia_low_latency" />
+        <CheckBox android:id="@+id/videoDecoderSpsLevel31" style="@style/SettingsSwitch" android:text="@string/video_decoder_sps_level_31" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/videoDecoderIdlePush" style="@style/SettingsSwitch" android:text="@string/video_decoder_idle_push" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/videoDecoderNvidiaLowBuffer" style="@style/SettingsSwitch" android:text="@string/video_decoder_nvidia_low_buffer" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/videoDecoderNvidiaNoDpb" style="@style/SettingsSwitch" android:text="@string/video_decoder_nvidia_no_dpb" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/videoDecoderNvidiaFullFrame" style="@style/SettingsSwitch" android:text="@string/video_decoder_nvidia_full_frame" />
         <View style="@style/SettingsDivider" android:tag="divider" />
         <CheckBox android:id="@+id/videoDecoderLegacyDrop" style="@style/SettingsSwitch" android:text="@string/video_decoder_legacy_drop" />
     </LinearLayout>

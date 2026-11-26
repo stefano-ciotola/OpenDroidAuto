@@ -392,7 +392,8 @@ bool parseSps(const uint8_t* nal, std::size_t size, SpsInfo* info) {
     return true;
 }
 
-SpsPatch patchSps(const uint8_t* nal, std::size_t size, std::vector<uint8_t>* out, SpsInfo* info) {
+SpsPatch patchSps(const uint8_t* nal, std::size_t size, std::vector<uint8_t>* out, SpsInfo* info,
+                  int minLevelIdc) {
     std::vector<uint8_t> rbsp;
     SpsInfo parsed;
     Layout layout;
@@ -403,16 +404,37 @@ SpsPatch patchSps(const uint8_t* nal, std::size_t size, std::vector<uint8_t>* ou
         *info = parsed;
     }
 
+    // level_idc is the third byte of the payload, a plain 8-bit field: it can
+    // change without moving any other bit.
+    bool levelRaised = false;
+    if (minLevelIdc > 0 && minLevelIdc <= 255 && parsed.levelIdc < minLevelIdc) {
+        rbsp[2] = static_cast<uint8_t>(minLevelIdc);
+        // Baseline, Main and Extended signal level 1b as level 11 with
+        // constraint_set3_flag; at any other level that flag must be 0.
+        const bool level1b = (parsed.profileIdc == 66 || parsed.profileIdc == 77 || parsed.profileIdc == 88) &&
+                             parsed.levelIdc == 11 && (rbsp[1] & 0x10) != 0;
+        if (level1b) {
+            rbsp[1] = static_cast<uint8_t>(rbsp[1] & ~0x10);
+        }
+        levelRaised = true;
+    }
+
     // The picture buffer has to hold the reference frames; one is the minimum.
     const int buffering = std::max(1, parsed.numRefFrames);
-    if (parsed.bitstreamRestriction && parsed.maxNumReorderFrames == 0 &&
-        parsed.maxDecFrameBuffering >= parsed.numRefFrames && parsed.maxDecFrameBuffering <= buffering) {
-        return SpsPatch::AlreadyLowLatency;
-    }
+    const bool alreadyLowLatency = parsed.bitstreamRestriction && parsed.maxNumReorderFrames == 0 &&
+        parsed.maxDecFrameBuffering >= parsed.numRefFrames && parsed.maxDecFrameBuffering <= buffering;
     // Only streams that cannot reorder: Baseline has no B slices, and with
     // pic_order_cnt_type 2 output order is decoding order by definition.
-    if (parsed.profileIdc != 66 && parsed.pocType != 2) {
-        return SpsPatch::Unsupported;
+    const bool mayReorder = parsed.profileIdc != 66 && parsed.pocType != 2;
+    if (alreadyLowLatency || mayReorder) {
+        if (!levelRaised) {
+            return alreadyLowLatency ? SpsPatch::AlreadyLowLatency : SpsPatch::Unsupported;
+        }
+        out->clear();
+        out->reserve(size + 4);
+        out->push_back(nal[0]);
+        escape(rbsp, out);
+        return SpsPatch::PatchedLevel;
     }
 
     BitWriter writer;
@@ -440,11 +462,11 @@ SpsPatch patchSps(const uint8_t* nal, std::size_t size, std::vector<uint8_t>* ou
     out->reserve(writer.data().size() + 8);
     out->push_back(nal[0]);
     escape(writer.data(), out);
-    return SpsPatch::Patched;
+    return levelRaised ? SpsPatch::PatchedBoth : SpsPatch::Patched;
 }
 
 bool patchAccessUnit(const uint8_t* data, std::size_t size, std::vector<uint8_t>* out,
-                     bool* sawSps, SpsInfo* info, SpsPatch* result) {
+                     bool* sawSps, SpsInfo* info, SpsPatch* result, int minLevelIdc) {
     if (sawSps != nullptr) {
         *sawSps = false;
     }
@@ -475,14 +497,14 @@ bool patchAccessUnit(const uint8_t* data, std::size_t size, std::vector<uint8_t>
                 *sawSps = true;
             }
             SpsInfo spsInfo;
-            const SpsPatch outcome = patchSps(data + start, end - start, &patched, &spsInfo);
+            const SpsPatch outcome = patchSps(data + start, end - start, &patched, &spsInfo, minLevelIdc);
             if (info != nullptr && outcome != SpsPatch::Invalid) {
                 *info = spsInfo;
             }
             if (result != nullptr) {
                 *result = outcome;
             }
-            if (outcome == SpsPatch::Patched) {
+            if (isPatched(outcome)) {
                 if (!changed) {
                     out->clear();
                     out->reserve(size + 16);
@@ -530,9 +552,13 @@ std::string describeSps(const SpsInfo& info) {
     return text;
 }
 
-const char* describePatch(SpsPatch result) {
+std::string describePatch(SpsPatch result, int minLevelIdc) {
+    char level[24];
+    snprintf(level, sizeof(level), "level %d.%d", minLevelIdc / 10, minLevelIdc % 10);
     switch (result) {
         case SpsPatch::Patched: return "patched: reorder 0";
+        case SpsPatch::PatchedLevel: return std::string("patched: ") + level;
+        case SpsPatch::PatchedBoth: return std::string("patched: reorder 0, ") + level;
         case SpsPatch::AlreadyLowLatency: return "already low latency";
         case SpsPatch::Unsupported: return "not patched (may reorder)";
         case SpsPatch::Invalid:

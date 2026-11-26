@@ -26,17 +26,27 @@ constexpr int64_t kSafetyMaxQueuedDurationUs = 3000000;
 constexpr std::size_t kMaxSyncWaitBuffers = 8;
 constexpr auto kMaxSyncWait = std::chrono::milliseconds(250);
 
+// Idle push: how long to wait for a frame before each empty buffer. Four
+// pushes cover about 150 ms after a frame, enough for the decoder to finish
+// it; after that read() just waits for the next frame.
+constexpr std::chrono::milliseconds kPushDelays[] = {
+    std::chrono::milliseconds(10), std::chrono::milliseconds(20),
+    std::chrono::milliseconds(40), std::chrono::milliseconds(80),
+};
+constexpr std::size_t kMaxPushes = sizeof(kPushDelays) / sizeof(kPushDelays[0]);
+
 } // namespace
 
 // https://www.programmersought.com/article/87712558400/
 // https://vec.io/posts/use-android-hardware-decoder-with-omxcodec-in-ndk
 // https://stackoverflow.com/questions/9832503/android-include-native-stagefright-features-in-my-own-project
-OMXSource::OMXSource(int width, int height, int fps, bool legacyDrop):
+OMXSource::OMXSource(int width, int height, int fps, bool legacyDrop, bool idlePush):
         format_(nullptr),
         maxQueuedBuffers_(legacyDrop ? kLegacyMaxQueuedBuffers : kSafetyMaxQueuedBuffers),
         maxQueuedDurationUs_(legacyDrop ? kLegacyMaxQueuedDurationUs : kSafetyMaxQueuedDurationUs),
         quitFlag_(false), waitingForSync_(false), droppedBuffers_(0),
-        syncWaitDroppedBuffers_(0)
+        syncWaitDroppedBuffers_(0),
+        idlePush_(idlePush), pushesSinceFrame_(kMaxPushes), lastFrameTimeUs_(-1)
 {
 
     int32_t bufferSize = (width * height * 3) / 2;
@@ -131,7 +141,7 @@ void OMXSource::queueBuffer(MediaBuffer* buffer){
         buffer->meta_data()->setInt32(kKeyIsSyncFrame, nalInfo.hasIdr ? 1 : 0);
     }
 
-    pbuffers_.push_back(Pending{buffer, nalInfo.hasSlice});
+    pbuffers_.push_back(Pending{buffer, nalInfo.hasSlice, false});
     stats.onQueueLength(pbuffers_.size());
 
     if (nalInfo.hasIdr && waitingForSync_) {
@@ -155,12 +165,30 @@ sp<MetaData>  OMXSource::getFormat(){
 // Blocks until a frame is available. OMXCodec calls read() from its OMX
 // callbacks, so while this waits no other callback of the codec is delivered;
 // DecoderOptions::oneInputBuffer keeps that to a single pending callback.
+//
+// That pending callback can be the one that hands out a decoded frame: the
+// frame then reaches the screen only when the phone sends the next one, which
+// on a static screen (5 frames per second) is a fifth of a second later, or
+// more. With idlePush, when no frame arrives within a few milliseconds the
+// decoder gets an empty input buffer instead: it returns it at once, read()
+// returns, and the codec's waiting callbacks run.
 bool OMXSource::nextBuffer(Pending* pending){
     if (Log::isVerbose()) Log_v("nextBuffer");
     std::unique_lock<std::mutex> l(mutex_);
 
     while (!quitFlag_) {
         if (pbuffers_.empty()){
+            if (idlePush_ && pushesSinceFrame_ < kMaxPushes && lastFrameTimeUs_ >= 0) {
+                cond_.wait_for(l, kPushDelays[pushesSinceFrame_]);
+                if (!quitFlag_ && pbuffers_.empty()) {
+                    ++pushesSinceFrame_;
+                    pending->buffer = makePushBuffer();
+                    pending->hasSlice = false;
+                    pending->push = true;
+                    return true;
+                }
+                continue;
+            }
             cond_.wait_until(l, std::chrono::steady_clock::now() + std::chrono::milliseconds(1000));
             continue;
         }
@@ -170,21 +198,42 @@ bool OMXSource::nextBuffer(Pending* pending){
         pbuffers_.pop_front();
         VideoStats::instance().onQueueLength(pbuffers_.size());
         if (Log::isVerbose()) Log_v("found buffer %d", pbuffers_.size());
+        if (pending->hasSlice) {
+            int64_t timeUs = 0;
+            if (pending->buffer->meta_data()->findInt64(kKeyTime, &timeUs) && timeUs >= 0) {
+                lastFrameTimeUs_ = timeUs;
+                pushesSinceFrame_ = 0;
+            }
+        }
         return true;
     }
 
     return false;
 }
 
+// An empty input buffer. Its time is a microsecond after the last frame's, so
+// it never matches a frame in the statistics and keeps timestamps increasing.
+MediaBuffer* OMXSource::makePushBuffer() {
+    auto* buffer = new MediaBuffer(16);
+    buffer->set_range(0, 0);
+    buffer->meta_data()->clear();
+    buffer->meta_data()->setInt64(kKeyTime, lastFrameTimeUs_ + 1);
+    return buffer;
+}
+
 status_t OMXSource::read(MediaBuffer **buffer, const MediaSource::ReadOptions *options) {
     if (Log::isVerbose()) Log_v("read");
 
-    Pending pending{nullptr, false};
+    Pending pending{nullptr, false, false};
     if (!nextBuffer(&pending)){
         return ERROR_END_OF_STREAM;
     }
 
-    VideoStats::instance().onFed(pending.hasSlice);
+    if (pending.push) {
+        VideoStats::instance().onPush();
+    } else {
+        VideoStats::instance().onFed(pending.hasSlice);
+    }
 
     MediaBuffer* mBuffer = pending.buffer;
     mBuffer->setObserver(this);

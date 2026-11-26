@@ -99,7 +99,11 @@
 	<string name="video_settings_experimental_hint">Applied the next time Android Auto starts. Only used by the Android 4.0 decoder.</string>
 	<string name="video_stats_overlay">Show video statistics over the projection</string>
 	<string name="video_decoder_one_input">Feed the decoder one frame at a time (lower latency)</string>
-	<string name="video_decoder_nvidia_low_latency">Nvidia low-latency decoding (when the decoder supports it)</string>
+	<string name="video_decoder_sps_level_31">With the SPS patch: correct an H.264 level below 3.1 (test)</string>
+	<string name="video_decoder_idle_push">Push the decoder when no new frame arrives (test)</string>
+	<string name="video_decoder_nvidia_low_buffer">Nvidia: low buffer (test)</string>
+	<string name="video_decoder_nvidia_no_dpb">Nvidia: no picture buffer (test)</string>
+	<string name="video_decoder_nvidia_full_frame">Nvidia: whole frames (test)</string>
 	<string name="video_decoder_sps_low_latency">Show each frame as soon as it is decoded (SPS patch)</string>
 	<string name="video_decoder_legacy_drop">Drop late frames and wait for a key frame (previous behaviour)</string>
 	<string name="video_stats_waiting">Video statistics: waiting for the first report…</string>

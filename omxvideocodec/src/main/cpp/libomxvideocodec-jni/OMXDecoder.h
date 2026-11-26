@@ -29,7 +29,7 @@ protected:
 
 
 private:
-    std::string applyNvidiaLowLatency(uint32_t requestedFlags);
+    std::string applyNvidiaParams(uint32_t requestedFlags, const DecoderOptions& options);
 
     OMXClient* client_;
     sp<MediaSource> decoder_;

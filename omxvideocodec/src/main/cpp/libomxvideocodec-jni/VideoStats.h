@@ -39,6 +39,8 @@ public:
     void onDecoded();
     void onRendered(int64_t timestampUs);
     void onKeyFrame(size_t bytes);
+    // An empty input buffer handed to the decoder while no frame arrived.
+    void onPush();
 
     // Latest report, empty until the first window has closed. Any thread.
     std::string lastReport();
@@ -87,6 +89,7 @@ private:
     uint64_t droppedTotal_ = 0;
     uint64_t keyFrames_ = 0;
     size_t lastKeyFrameBytes_ = 0;
+    uint64_t pushTotal_ = 0;
     std::string decoderSummary_;
     std::string streamSummary_;
 

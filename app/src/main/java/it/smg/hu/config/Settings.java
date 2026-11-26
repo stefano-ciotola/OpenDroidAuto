@@ -250,7 +250,11 @@ public class Settings {
         public final static String VIDEO_SHOW_APP_BADGE = "video_show_app_badge";
         public final static String VIDEO_STATS_OVERLAY = "video_stats_overlay";
         public final static String VIDEO_DECODER_ONE_INPUT = "video_decoder_one_input";
-        public final static String VIDEO_DECODER_NVIDIA_LOW_LATENCY = "video_decoder_nvidia_low_latency";
+        public final static String VIDEO_DECODER_NVIDIA_LOW_BUFFER = "video_decoder_nvidia_low_buffer";
+        public final static String VIDEO_DECODER_NVIDIA_NO_DPB = "video_decoder_nvidia_no_dpb";
+        public final static String VIDEO_DECODER_NVIDIA_FULL_FRAME = "video_decoder_nvidia_full_frame";
+        public final static String VIDEO_DECODER_SPS_LEVEL_31 = "video_decoder_sps_level_31";
+        public final static String VIDEO_DECODER_IDLE_PUSH = "video_decoder_idle_push";
         public final static String VIDEO_DECODER_LEGACY_DROP = "video_decoder_legacy_drop";
         public final static String VIDEO_DECODER_SPS_LOW_LATENCY = "video_decoder_sps_low_latency";
 
@@ -267,7 +271,12 @@ public class Settings {
         // Nvidia parameters are only set when the decoder knows them.
         public final static boolean VIDEO_STATS_OVERLAY_DEFAULT_VALUE = false;
         public final static boolean VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE = true;
-        public final static boolean VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE = true;
+        // All three together doubled the frames held in the decoder in the car.
+        public final static boolean VIDEO_DECODER_NVIDIA_LOW_BUFFER_DEFAULT_VALUE = false;
+        public final static boolean VIDEO_DECODER_NVIDIA_NO_DPB_DEFAULT_VALUE = false;
+        public final static boolean VIDEO_DECODER_NVIDIA_FULL_FRAME_DEFAULT_VALUE = false;
+        public final static boolean VIDEO_DECODER_SPS_LEVEL_31_DEFAULT_VALUE = false;
+        public final static boolean VIDEO_DECODER_IDLE_PUSH_DEFAULT_VALUE = false;
         public final static boolean VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE = false;
         // Declares "no frame reordering" in the SPS so the Tegra decoder stops
         // holding 4-5 decoded frames back before showing them.
@@ -343,11 +352,24 @@ public class Settings {
             set(VIDEO_DECODER_ONE_INPUT, value);
         }
 
-        public boolean decoderNvidiaLowLatency() {
-            return get(VIDEO_DECODER_NVIDIA_LOW_LATENCY, VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE);
+        public boolean decoderNvidiaLowBuffer() {
+            return get(VIDEO_DECODER_NVIDIA_LOW_BUFFER, VIDEO_DECODER_NVIDIA_LOW_BUFFER_DEFAULT_VALUE);
         }
-        public void decoderNvidiaLowLatency(boolean value){
-            set(VIDEO_DECODER_NVIDIA_LOW_LATENCY, value);
+
+        public boolean decoderNvidiaNoDpb() {
+            return get(VIDEO_DECODER_NVIDIA_NO_DPB, VIDEO_DECODER_NVIDIA_NO_DPB_DEFAULT_VALUE);
+        }
+
+        public boolean decoderNvidiaFullFrame() {
+            return get(VIDEO_DECODER_NVIDIA_FULL_FRAME, VIDEO_DECODER_NVIDIA_FULL_FRAME_DEFAULT_VALUE);
+        }
+
+        public boolean decoderSpsLevel31() {
+            return get(VIDEO_DECODER_SPS_LEVEL_31, VIDEO_DECODER_SPS_LEVEL_31_DEFAULT_VALUE);
+        }
+
+        public boolean decoderIdlePush() {
+            return get(VIDEO_DECODER_IDLE_PUSH, VIDEO_DECODER_IDLE_PUSH_DEFAULT_VALUE);
         }
 
         public boolean decoderLegacyDrop() {

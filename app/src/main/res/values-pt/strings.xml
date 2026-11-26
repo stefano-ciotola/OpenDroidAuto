@@ -121,7 +121,11 @@
     <string name="video_settings_experimental_hint">Aplicadas na próxima vez que o Android Auto iniciar. Usadas apenas pelo decodificador do Android 4.0.</string>
     <string name="video_stats_overlay">Mostrar estatísticas de vídeo sobre a projeção</string>
     <string name="video_decoder_one_input">Enviar um quadro de cada vez ao decodificador (menor latência)</string>
-    <string name="video_decoder_nvidia_low_latency">Decodificação de baixa latência Nvidia (quando o decodificador suporta)</string>
+    <string name="video_decoder_sps_level_31">Com o patch SPS: corrigir um nível H.264 abaixo de 3.1 (teste)</string>
+    <string name="video_decoder_idle_push">Empurrar o decodificador quando não chegam quadros novos (teste)</string>
+    <string name="video_decoder_nvidia_low_buffer">Nvidia: buffer reduzido (teste)</string>
+    <string name="video_decoder_nvidia_no_dpb">Nvidia: sem buffer de imagens (teste)</string>
+    <string name="video_decoder_nvidia_full_frame">Nvidia: quadros inteiros (teste)</string>
     <string name="video_decoder_sps_low_latency">Mostrar cada quadro assim que for decodificado (patch SPS)</string>
     <string name="video_decoder_legacy_drop">Descartar quadros atrasados e aguardar um quadro-chave (comportamento anterior)</string>
     <string name="video_stats_waiting">Estatísticas de vídeo: aguardando o primeiro relatório…</string>

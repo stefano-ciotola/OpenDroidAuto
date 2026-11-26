@@ -87,8 +87,20 @@ public class OMXVideoOutput extends VideoOutput /*implements Runnable*/ {
         if (settings_.video.decoderOneInput()) {
             options |= OMXVideoCodec.OPTION_ONE_INPUT_BUFFER;
         }
-        if (settings_.video.decoderNvidiaLowLatency()) {
-            options |= OMXVideoCodec.OPTION_NVIDIA_LOW_LATENCY;
+        if (settings_.video.decoderNvidiaLowBuffer()) {
+            options |= OMXVideoCodec.OPTION_NVIDIA_LOW_BUFFER;
+        }
+        if (settings_.video.decoderNvidiaNoDpb()) {
+            options |= OMXVideoCodec.OPTION_NVIDIA_NO_DPB;
+        }
+        if (settings_.video.decoderNvidiaFullFrame()) {
+            options |= OMXVideoCodec.OPTION_NVIDIA_FULL_FRAME;
+        }
+        if (settings_.video.decoderSpsLevel31()) {
+            options |= OMXVideoCodec.OPTION_SPS_LEVEL_31;
+        }
+        if (settings_.video.decoderIdlePush()) {
+            options |= OMXVideoCodec.OPTION_IDLE_PUSH;
         }
         if (settings_.video.decoderLegacyDrop()) {
             options |= OMXVideoCodec.OPTION_LEGACY_DROP;

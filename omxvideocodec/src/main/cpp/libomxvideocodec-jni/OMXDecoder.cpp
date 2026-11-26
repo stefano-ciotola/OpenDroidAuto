@@ -123,8 +123,9 @@ const std::string& OMXDecoder::summary() const {
 }
 
 status_t OMXDecoder::init(const DecoderOptions& options){
-    if (Log::isInfo()) Log_i("init decoder (one input buffer: %d, nvidia low latency: %d)",
-                             options.oneInputBuffer, options.nvidiaLowLatency);
+    if (Log::isInfo()) Log_i("init decoder (one input buffer: %d, nvidia lowbuf %d nodpb %d fullframe %d)",
+                             options.oneInputBuffer, options.nvidiaLowBuffer, options.nvidiaNoDpb,
+                             options.nvidiaFullFrame);
 
     summary_ = std::string("one-input ") + (options.oneInputBuffer ? "on" : "off");
 
@@ -151,8 +152,8 @@ status_t OMXDecoder::init(const DecoderOptions& options){
         }
 
         summary_ += " | nvidia ";
-        if (options.nvidiaLowLatency) {
-            summary_ += applyNvidiaLowLatency(flags);
+        if (options.anyNvidia()) {
+            summary_ += applyNvidiaParams(flags, options);
         } else {
             summary_ += "off";
         }
@@ -177,7 +178,9 @@ status_t OMXDecoder::init(const DecoderOptions& options){
 // applied here on the node, while it is still in the Loaded state.
 // vdecfullframedata tells the decoder that every input buffer is a complete
 // frame, which is what Android Auto sends.
-std::string OMXDecoder::applyNvidiaLowLatency(uint32_t requestedFlags) {
+// In the car all three together doubled the frames held in the decoder (6
+// instead of 3 on a static screen), so each one has its own switch.
+std::string OMXDecoder::applyNvidiaParams(uint32_t requestedFlags, const DecoderOptions& options) {
     OMXCodec* codec = static_cast<OMXCodec*>(decoder_.get());
     const sp<IOMX>& codecOmx = codec->*get(CodecOmx());
     const IOMX::node_id node = codec->*get(CodecNode());
@@ -202,12 +205,19 @@ std::string OMXDecoder::applyNvidiaLowLatency(uint32_t requestedFlags) {
     initNvxParam(&fullFrame);
 
     const sp<IOMX>& omx = client_->interface();
-    std::string result = "lowbuf ";
-    result += setNvxParam(omx, node, "OMX.Nvidia.index.param.uselowbuffer", &lowBuffer, sizeof(lowBuffer));
-    result += ", nodpb ";
-    result += setNvxParam(omx, node, "OMX.Nvidia.index.param.h264disabledpb", &disableDpb, sizeof(disableDpb));
-    result += ", fullframe ";
-    result += setNvxParam(omx, node, "OMX.Nvidia.index.param.vdecfullframedata", &fullFrame, sizeof(fullFrame));
+    std::string result;
+    if (options.nvidiaLowBuffer) {
+        result += "lowbuf ";
+        result += setNvxParam(omx, node, "OMX.Nvidia.index.param.uselowbuffer", &lowBuffer, sizeof(lowBuffer));
+    }
+    if (options.nvidiaNoDpb) {
+        result += result.empty() ? "nodpb " : ", nodpb ";
+        result += setNvxParam(omx, node, "OMX.Nvidia.index.param.h264disabledpb", &disableDpb, sizeof(disableDpb));
+    }
+    if (options.nvidiaFullFrame) {
+        result += result.empty() ? "fullframe " : ", fullframe ";
+        result += setNvxParam(omx, node, "OMX.Nvidia.index.param.vdecfullframedata", &fullFrame, sizeof(fullFrame));
+    }
     return result;
 }
 

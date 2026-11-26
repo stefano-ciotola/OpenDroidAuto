@@ -22,7 +22,8 @@ public:
     // legacyDrop: flush the backlog after 8 frames or 250 ms and wait for an
     // IDR frame (previous behaviour). Otherwise frames are only dropped past a
     // last-resort safety limit, so the decoder keeps its reference chain.
-    OMXSource(int width, int height, int fps, bool legacyDrop);
+    // idlePush: see nextBuffer().
+    OMXSource(int width, int height, int fps, bool legacyDrop, bool idlePush);
 
     status_t read(MediaBuffer **buffer, const MediaSource::ReadOptions *options) override;
     status_t start(MetaData *params) override;
@@ -48,6 +49,7 @@ private:
     struct Pending {
         MediaBuffer* buffer;
         bool hasSlice;
+        bool push;
     };
 
     sp<MetaData> format_;
@@ -64,6 +66,12 @@ private:
     std::size_t syncWaitDroppedBuffers_;
     std::chrono::steady_clock::time_point syncWaitStarted_;
 
+    const bool idlePush_;
+    // Empty buffers handed out since the last frame, and that frame's time.
+    std::size_t pushesSinceFrame_;
+    int64_t lastFrameTimeUs_;
+
     bool nextBuffer(Pending* pending);
+    MediaBuffer* makePushBuffer();
     void clearQueuedBuffers();
 };

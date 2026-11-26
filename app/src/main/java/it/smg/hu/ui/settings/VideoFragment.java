@@ -111,8 +111,20 @@ public class VideoFragment extends BaseSettingsFragment {
         CheckBox decoderSpsLowLatency = view.findViewById(R.id.videoDecoderSpsLowLatency);
         initCheckBox(decoderSpsLowLatency, settings.video, Settings.Video.VIDEO_DECODER_SPS_LOW_LATENCY, Settings.Video.VIDEO_DECODER_SPS_LOW_LATENCY_DEFAULT_VALUE);
 
-        CheckBox decoderNvidiaLowLatency = view.findViewById(R.id.videoDecoderNvidiaLowLatency);
-        initCheckBox(decoderNvidiaLowLatency, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_LATENCY, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_LATENCY_DEFAULT_VALUE);
+        CheckBox decoderSpsLevel = view.findViewById(R.id.videoDecoderSpsLevel31);
+        initCheckBox(decoderSpsLevel, settings.video, Settings.Video.VIDEO_DECODER_SPS_LEVEL_31, Settings.Video.VIDEO_DECODER_SPS_LEVEL_31_DEFAULT_VALUE);
+
+        CheckBox decoderIdlePush = view.findViewById(R.id.videoDecoderIdlePush);
+        initCheckBox(decoderIdlePush, settings.video, Settings.Video.VIDEO_DECODER_IDLE_PUSH, Settings.Video.VIDEO_DECODER_IDLE_PUSH_DEFAULT_VALUE);
+
+        CheckBox nvidiaLowBuffer = view.findViewById(R.id.videoDecoderNvidiaLowBuffer);
+        initCheckBox(nvidiaLowBuffer, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_BUFFER, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_BUFFER_DEFAULT_VALUE);
+
+        CheckBox nvidiaNoDpb = view.findViewById(R.id.videoDecoderNvidiaNoDpb);
+        initCheckBox(nvidiaNoDpb, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_NO_DPB, Settings.Video.VIDEO_DECODER_NVIDIA_NO_DPB_DEFAULT_VALUE);
+
+        CheckBox nvidiaFullFrame = view.findViewById(R.id.videoDecoderNvidiaFullFrame);
+        initCheckBox(nvidiaFullFrame, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_FULL_FRAME, Settings.Video.VIDEO_DECODER_NVIDIA_FULL_FRAME_DEFAULT_VALUE);
 
         CheckBox decoderLegacyDrop = view.findViewById(R.id.videoDecoderLegacyDrop);
         initCheckBox(decoderLegacyDrop, settings.video, Settings.Video.VIDEO_DECODER_LEGACY_DROP, Settings.Video.VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE);
