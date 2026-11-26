@@ -88,6 +88,8 @@ public class HondaConnectManager {
     private static final String TAG = "HondaConnectManager";
 
     private static final long HEARTBEAT_INTERVAL_MS = 4000;
+    /** ModeMgrProperty.MODE_LADDR_OFF: no source. */
+    private static final int MODE_LADDR_OFF = 255;
     private static final int FOCUS_WAIT_TIMEOUT_MS = 250;
     private static final String MODE_MGR_THREAD_NAME = "ODA-Honda-ModeMgr";
 
@@ -553,10 +555,12 @@ public class HondaConnectManager {
                 registerSteeringMenuCallback();
                 registerModeMgrSWCallbacks();
                 notifySteeringMenuDispMode(1);
-            } else if (settings_.advanced.keepSourceOnScreen()) {
-                // On screen the projection is the head unit's source (see
-                // releaseAudioFocus), so the steering wheel keys reach it
-                // before any music has played.
+            } else if (settings_.advanced.keepSourceOnScreen() && !otherSourcePlaying()) {
+                // Nothing else is playing: make the projection the head
+                // unit's source now (see releaseAudioFocus), so the steering
+                // wheel keys reach it before any music has played. With the
+                // radio or another source on, the projection only takes the
+                // source when its media starts, as before.
                 registerModeMgrSWCallbacks();
                 requestAudioFocus();
             } else {
@@ -1357,6 +1361,28 @@ public class HondaConnectManager {
     }
 
     // ---- Head unit state, the return to the projection and the overlay
+
+    /**
+     * True when the head unit plays another source (radio, DAB, CD, USB...):
+     * anything but nothing (MODE_LADDR_OFF) or the address this app plays on.
+     * Also true when the state cannot be read, so nothing is taken from it.
+     */
+    private boolean otherSourcePlaying() {
+        if (stateMgrManager_ == null) {
+            return true;
+        }
+        try {
+            StateMgrInfo info = stateMgrManager_.getAllState();
+            if (info == null) {
+                return true;
+            }
+            int audio = info.audioAddress;
+            return audio != MODE_LADDR_OFF && audio != settings_.advanced.modeMgrAudioVideoIdx();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "could not read the head unit audio source", e);
+            return true;
+        }
+    }
 
     private void refreshHeadUnitState() {
         if (stateMgrManager_ == null) {
