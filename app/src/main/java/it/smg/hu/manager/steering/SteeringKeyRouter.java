@@ -151,7 +151,16 @@ public final class SteeringKeyRouter {
             mark = mark(family, source, now);
         }
 
-        final boolean sent = toProjection ? output_.toProjection(code) : output_.injectIntoWindow(code);
+        final boolean sent;
+        if (toProjection) {
+            sent = output_.toProjection(code);
+        } else if (source == Source.WINDOW) {
+            // Already in the app's window; injecting it would bring it back
+            // here. Counted, so a callback copy is not injected either.
+            sent = true;
+        } else {
+            sent = output_.injectIntoWindow(code);
+        }
         if (!sent) {
             synchronized (this) {
                 unmark(mark);

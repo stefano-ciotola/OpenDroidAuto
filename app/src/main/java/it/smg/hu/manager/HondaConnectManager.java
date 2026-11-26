@@ -761,9 +761,10 @@ public class HondaConnectManager {
                 releaseFocus(currentIdx_, currentModeState_);
             }
 
-            if (hasAudioFocus_){
-                notifySteeringMenuDispMode(0);
-            }
+            // Announced whenever the projection was in front, audio focus
+            // or not (initAudioBinding): withdrawn in any case, or the head
+            // unit could keep the wheel keys from its own sources.
+            notifySteeringMenuDispMode(0);
 
             unregisterModeMgrCallback();
             unregisterStateMgrCallback();

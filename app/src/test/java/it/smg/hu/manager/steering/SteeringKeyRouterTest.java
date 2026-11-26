@@ -213,6 +213,15 @@ public class SteeringKeyRouterTest {
     }
 
     @Test
+    public void aWindowKeyIsNeverInjectedBackIntoTheWindow() {
+        output.running = false;
+        assertEquals(Outcome.WINDOW, key(Source.WINDOW, HondaKeys.STRG_CH_UP, 0, 0));
+        assertEquals(Outcome.DUPLICATE, key(Source.STEERING_MENU, HondaKeys.STRG_CH_UP, 0, 4));
+        assertTrue(output.injected.isEmpty());
+        assertTrue(output.sent.isEmpty());
+    }
+
+    @Test
     public void aHeldKeyInTheWindowRepeatsOnlyTheVolume() {
         assertEquals(Outcome.PROJECTION, key(Source.WINDOW, HondaKeys.STRG_CH_UP, 0, 0));
         assertEquals(Outcome.DUPLICATE, key(Source.WINDOW, HondaKeys.STRG_CH_UP, 1, 500));

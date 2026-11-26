@@ -18,6 +18,7 @@ import java.util.Map;
 import it.smg.hu.config.Settings;
 import it.smg.hu.manager.HondaConnectManager;
 import it.smg.hu.manager.steering.HondaKeys;
+import it.smg.hu.manager.steering.SteeringKeyRouter;
 import it.smg.hu.ui.settings.KeymapFragment;
 import it.smg.libs.common.Log;
 
@@ -253,7 +254,9 @@ public class InputDevice extends it.smg.libs.aasdk.projection.InputDevice implem
             final HondaConnectManager honda = HondaConnectManager.instance();
             if (honda != null) {
                 if (action == KeyEvent.ACTION_DOWN) {
-                    return honda.onWindowSteeringKey(keyCode, event.getRepeatCount()).consumed();
+                    final SteeringKeyRouter.Result result = honda.onWindowSteeringKey(keyCode, event.getRepeatCount());
+                    // WINDOW: left to the window, which already has it.
+                    return result.consumed() && result.outcome != SteeringKeyRouter.Outcome.WINDOW;
                 }
                 return resolve(keyCode) != NOT_MAPPED;
             }
