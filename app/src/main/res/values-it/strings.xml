@@ -139,7 +139,7 @@
 	<string name="advanced_settings_enablehondamicvr">Usa il microfono Honda per i comandi vocali</string>
 	<string name="advanced_settings_usebtmicvr">Microfono Bluetooth per i comandi vocali</string>
 	<string name="advanced_settings_enablehondaimid">Attiva l\'i-MID Honda</string>
-	<string name="advanced_settings_honda_keep_source">Tieni Android Auto come sorgente audio finché è a schermo (i tasti al volante restano suoi)</string>
+	<string name="advanced_settings_honda_keep_source">Android Auto è la sorgente audio quando è a schermo: i tasti al volante vanno a lui e la radio tace</string>
 	<string name="advanced_settings_honda_return_to_projection">Torna ad Android Auto dopo chiamate, retrocamera e comandi vocali Honda</string>
 	<string name="advanced_settings_honda_block_bt_voice">Blocca la Siri Honda via Bluetooth mentre Android Auto è a schermo (sperimentale)</string>
 	<string name="advanced_settings_logLevel">Livello di log</string>

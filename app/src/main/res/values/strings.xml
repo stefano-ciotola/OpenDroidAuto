@@ -140,7 +140,7 @@
 	<string name="advanced_settings_enablehondamicvr">Enable Honda Mic VR</string>
 	<string name="advanced_settings_usebtmicvr">Bluetooth Mic VR</string>
 	<string name="advanced_settings_enablehondaimid">Enable Honda iMid</string>
-	<string name="advanced_settings_honda_keep_source">Keep Android Auto as the audio source while it is on screen (steering wheel keys keep reaching it)</string>
+	<string name="advanced_settings_honda_keep_source">Android Auto is the audio source while it is on screen: the steering wheel keys go to it and the radio goes quiet</string>
 	<string name="advanced_settings_honda_return_to_projection">Return to Android Auto after calls, reverse camera and Honda voice</string>
 	<string name="advanced_settings_honda_block_bt_voice">Block the Honda Siri over Bluetooth while Android Auto is on screen (experimental)</string>
 	<string name="advanced_settings_logLevel">Log Level</string>

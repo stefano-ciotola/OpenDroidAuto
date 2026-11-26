@@ -88,8 +88,12 @@ public class HondaConnectManager {
     private static final String TAG = "HondaConnectManager";
 
     private static final long HEARTBEAT_INTERVAL_MS = 4000;
-    /** ModeMgrProperty.MODE_LADDR_OFF: no source. */
-    private static final int MODE_LADDR_OFF = 255;
+    // After a call, Siri or a traffic announcement the head unit gives the
+    // audio back to the radio: take it back once things settle, and check
+    // again a little later in case the head unit switched once more.
+    private static final long SOURCE_RECLAIM_DELAY_MS = 1000;
+    private static final long SOURCE_RECLAIM_RECHECK_MS = 3000;
+    private static final int SOURCE_RECLAIM_ATTEMPTS = 2;
     private static final int FOCUS_WAIT_TIMEOUT_MS = 250;
     private static final String MODE_MGR_THREAD_NAME = "ODA-Honda-ModeMgr";
 
@@ -163,6 +167,11 @@ public class HondaConnectManager {
     private int hftPopup_ = -1;
     private int videoAddress_ = -1;
     private int audioAddress_ = -1;
+    private int rdsInterrupt_ = -1;
+    private int rdsAlarmInterrupt_ = -1;
+    private boolean audioInterrupted_;
+    private int reclaimAttempts_;
+    private int reclaims_;
     private final Object btVoiceReceiverLock_ = new Object();
     private BroadcastReceiver btVoiceReceiver_;
     // Media is playing (between MediaAudioOutput start and stop).
@@ -555,12 +564,13 @@ public class HondaConnectManager {
                 registerSteeringMenuCallback();
                 registerModeMgrSWCallbacks();
                 notifySteeringMenuDispMode(1);
-            } else if (settings_.advanced.keepSourceOnScreen() && !otherSourcePlaying()) {
-                // Nothing else is playing: make the projection the head
-                // unit's source now (see releaseAudioFocus), so the steering
-                // wheel keys reach it before any music has played. With the
-                // radio or another source on, the projection only takes the
-                // source when its media starts, as before.
+            } else if (settings_.advanced.keepSourceOnScreen() || mediaPlaying_) {
+                // The head unit delivers the steering wheel keys to the
+                // current audio source, and resumes the radio at every start:
+                // the projection becomes the source as soon as it is on
+                // screen (see releaseAudioFocus), and always when its media
+                // is playing, for instance after coming back from another
+                // screen.
                 registerModeMgrSWCallbacks();
                 requestAudioFocus();
             } else {
@@ -1112,8 +1122,8 @@ public class HondaConnectManager {
         StateMgrChangeInfo changeInfo = new StateMgrChangeInfo();
         changeInfo.audioAddressC = true;
         changeInfo.dayNightStateC = true;
-        changeInfo.rdsInterruptC = false;
-        changeInfo.rdsAlarmInterruptC = false;
+        changeInfo.rdsInterruptC = true;
+        changeInfo.rdsAlarmInterruptC = true;
         changeInfo.videoAddressC = true;
         changeInfo.functionInfoC = false;
         changeInfo.openingScreenC = false;
@@ -1362,28 +1372,6 @@ public class HondaConnectManager {
 
     // ---- Head unit state, the return to the projection and the overlay
 
-    /**
-     * True when the head unit plays another source (radio, DAB, CD, USB...):
-     * anything but nothing (MODE_LADDR_OFF) or the address this app plays on.
-     * Also true when the state cannot be read, so nothing is taken from it.
-     */
-    private boolean otherSourcePlaying() {
-        if (stateMgrManager_ == null) {
-            return true;
-        }
-        try {
-            StateMgrInfo info = stateMgrManager_.getAllState();
-            if (info == null) {
-                return true;
-            }
-            int audio = info.audioAddress;
-            return audio != MODE_LADDR_OFF && audio != settings_.advanced.modeMgrAudioVideoIdx();
-        } catch (RuntimeException e) {
-            Log.w(TAG, "could not read the head unit audio source", e);
-            return true;
-        }
-    }
-
     private void refreshHeadUnitState() {
         if (stateMgrManager_ == null) {
             return;
@@ -1407,13 +1395,60 @@ public class HondaConnectManager {
             if (changed == null || changed.hftPopupC) hftPopup_ = noteState("popup", hftPopup_, info.hftPopup);
             if (changed == null || changed.videoAddressC) videoAddress_ = noteState("v", videoAddress_, info.videoAddress);
             if (changed == null || changed.audioAddressC) audioAddress_ = noteState("a", audioAddress_, info.audioAddress);
+            if (changed == null || changed.rdsInterruptC) rdsInterrupt_ = noteState("ta", rdsInterrupt_, info.rdsInterrupt);
+            if (changed == null || changed.rdsAlarmInterruptC) rdsAlarmInterrupt_ = noteState("alarm", rdsAlarmInterrupt_, info.rdsAlarmInterrupt);
 
             returnPolicy_.onHeadUnitState(
                     siriState_ == StateMgrServiceConst.STATE_SIRI_ON,
                     voiceTagState_ == StateMgrServiceConst.STATE_VOICETAG_ON,
                     hftState_ > 0 || hftPopup_ > 0,
                     videoAddress_);
+
+            final boolean interrupted = audioInterruptedLocked();
+            if (interrupted) {
+                mainHandler_.removeCallbacks(reclaimSourceTask_);
+            } else if (audioInterrupted_) {
+                reclaimAttempts_ = 0;
+                mainHandler_.removeCallbacks(reclaimSourceTask_);
+                mainHandler_.postDelayed(reclaimSourceTask_, SOURCE_RECLAIM_DELAY_MS);
+            }
+            audioInterrupted_ = interrupted;
         }
+    }
+
+    /** Something of the head unit's own has the audio for now: Siri, voice commands, a call, a traffic announcement. */
+    private boolean audioInterruptedLocked() {
+        return siriState_ == StateMgrServiceConst.STATE_SIRI_ON
+                || voiceTagState_ == StateMgrServiceConst.STATE_VOICETAG_ON
+                || hftState_ > 0 || hftPopup_ > 0
+                || rdsInterrupt_ > 0 || rdsAlarmInterrupt_ > 0;
+    }
+
+    private final Runnable reclaimSourceTask_ = () -> runOnModeMgrExecutor(this::reclaimSource);
+
+    /**
+     * After an interruption the head unit hands the audio back to the radio,
+     * not to the projection. Take it back while the projection is on screen
+     * and should be the source (its media plays, or "keep the source" is on).
+     */
+    private void reclaimSource() {
+        if (!isPreinstall() || modeMgrManager_ == null || !isRunning_ || !inForeground_ || hasAudioFocus_) {
+            return;
+        }
+        if (!mediaPlaying_ && !settings_.advanced.keepSourceOnScreen()) {
+            return;
+        }
+        synchronized (headUnitLock_) {
+            if (audioInterruptedLocked() || reclaimAttempts_ >= SOURCE_RECLAIM_ATTEMPTS) {
+                return;
+            }
+            reclaimAttempts_++;
+            reclaims_++;
+        }
+        headUnitEvents_.add("src back");
+        if (Log.isInfo()) Log.i(TAG, "taking the audio source back after an interruption");
+        requestAudioFocus();
+        mainHandler_.postDelayed(reclaimSourceTask_, SOURCE_RECLAIM_RECHECK_MS);
     }
 
     private int noteState(String name, int previous, int value) {
@@ -1448,16 +1483,23 @@ public class HondaConnectManager {
      */
     public String steeringStatus() {
         final StringBuilder text = new StringBuilder("hu ");
+        final int reclaims;
         synchronized (headUnitLock_) {
             text.append('a').append(audioAddress_).append(" v").append(videoAddress_);
             if (siriState_ == StateMgrServiceConst.STATE_SIRI_ON) text.append(" siri");
             if (voiceTagState_ == StateMgrServiceConst.STATE_VOICETAG_ON) text.append(" voice");
             if (hftState_ > 0) text.append(" call").append(hftState_);
             if (hftPopup_ > 0) text.append(" popup");
+            if (rdsInterrupt_ > 0 || rdsAlarmInterrupt_ > 0) text.append(" ta");
+            reclaims = reclaims_;
         }
-        text.append(" | src ").append(!hasAudioFocus_ ? "-" : mediaPlaying_ ? "playing" : "kept");
+        text.append(" | src ").append(hasAudioFocus_ ? "AA" : "-");
+        if (reclaims > 0) {
+            text.append(" back x").append(reclaims);
+        }
+        text.append(" | media ").append(mediaPlaying_ ? "on" : "off");
         text.append(" | keys ").append(modeMgrServiceSWKeyEventCallBack_ != null ? "on" : "off");
-        text.append(" | back ").append(returnPolicy_.describe());
+        text.append(" | return ").append(returnPolicy_.describe());
         text.append(" | mic ").append(!settings_.advanced.hondaMicVrEnabled() ? "off"
                 : settings_.advanced.useBtMicVr() ? "bt" : "ecnc");
         text.append(" | bt-guard ").append(voiceGuardStatus_);
@@ -1683,7 +1725,8 @@ public class HondaConnectManager {
             dumpStateMgr(info);
 
             if (changed.videoAddressC || changed.audioAddressC || changed.siriStateC
-                    || changed.voiceTagStateC || changed.hftStateC || changed.hftPopupC) {
+                    || changed.voiceTagStateC || changed.hftStateC || changed.hftPopupC
+                    || changed.rdsInterruptC || changed.rdsAlarmInterruptC) {
                 onHeadUnitState(info, changed);
             }
 
