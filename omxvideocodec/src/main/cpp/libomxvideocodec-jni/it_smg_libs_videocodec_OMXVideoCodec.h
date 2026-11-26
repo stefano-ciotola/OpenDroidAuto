@@ -14,8 +14,8 @@ public:
     static jfieldID handleId;
     static JOMXVideoCodec::Pointer getJOMXVideoCodec(JNIEnv* env, jobject jvideocodec);
 
-    void setNativeWindow(ANativeWindow* nativeWindow, int height, int width);
-    status_t init(int fps);
+    void setNativeWindow(ANativeWindow* nativeWindow, int width, int height);
+    status_t init(int fps, int options);
     void shutdown();
     void queueBuffer(common::DataConstBuffer &b, int64_t timestamp);
     void setSps(common::DataConstBuffer &b);

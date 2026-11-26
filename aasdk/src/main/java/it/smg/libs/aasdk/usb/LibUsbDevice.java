@@ -83,6 +83,17 @@ public final class LibUsbDevice {
         return false;
     }
 
+    public boolean verifyUsable() {
+        if (usbConnection_ != null) {
+            return true;
+        }
+        if (open()) {
+            close();
+            return true;
+        }
+        return false;
+    }
+
     public void close(){
         if (Log.isDebug()) Log.d(TAG, "closing connection");
         nativeClose();

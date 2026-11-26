@@ -1,13 +1,14 @@
 package it.smg.hu.ui.settings;
 
 import android.content.Context;
-import android.content.res.ColorStateList;
 import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.graphics.drawable.GradientDrawable;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -16,12 +17,12 @@ import android.widget.TextView;
 import android.view.ViewGroup;
 
 import androidx.fragment.app.Fragment;
-import androidx.core.widget.CompoundButtonCompat;
 
 import java.util.concurrent.Callable;
 
 import it.smg.hu.R;
 import it.smg.hu.config.Settings;
+import it.smg.hu.ui.Ui;
 import it.smg.libs.common.Log;
 
 public abstract class BaseSettingsFragment extends Fragment {
@@ -32,54 +33,80 @@ public abstract class BaseSettingsFragment extends Fragment {
     @Override
     public void onViewCreated(View view, android.os.Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        boolean dark = Settings.instance().appearance.darkTheme();
-        view.setBackgroundColor(getResources().getColor(dark ? R.color.oda_surface : R.color.settings_surface));
-        styleControls(view, dark);
+        Ui.Palette palette = Ui.palette(requireContext());
+        view.setBackgroundColor(palette.bg);
+        styleControls(view, palette, false);
     }
 
-    private void styleControls(View view, boolean dark) {
-        if (view instanceof ViewGroup && !(view instanceof Spinner)) {
-            ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                styleControls(group.getChildAt(i), dark);
+    /**
+     * Turns the tagged layouts into the grouped look: tag="group" containers
+     * get the rounded surface, "divider" the hairline, "section" and "hint"
+     * the muted colour, checkboxes become rows with a switch on the right,
+     * fields and spinners get the inset field. Buttons keep their own style
+     * (keymap hotspots, theme segments).
+     */
+    @SuppressWarnings("deprecation")
+    private void styleControls(View view, Ui.Palette p, boolean inGroup) {
+        Context context = requireContext();
+        Object tag = view.getTag();
+        if ("divider".equals(tag)) {
+            view.setBackgroundColor(p.hairline);
+            return;
+        }
+        if (view instanceof Spinner) {
+            view.setBackgroundDrawable(Ui.field(context, p, true));
+            view.setPadding(0, 0, 0, 0);
+            return;
+        }
+        if (view instanceof ViewGroup) {
+            boolean group = "group".equals(tag);
+            if (group) {
+                view.setBackgroundDrawable(Ui.rounded(context, p.surface, 14, p.hairline));
+            }
+            ViewGroup children = (ViewGroup) view;
+            for (int i = 0; i < children.getChildCount(); i++) {
+                styleControls(children.getChildAt(i), p, inGroup || group);
             }
             return;
         }
-        int primaryColor = dark ? R.color.oda_text_primary : R.color.settings_text_primary;
-        int secondaryColor = dark ? R.color.oda_text_secondary : R.color.settings_text_secondary;
         if (view instanceof EditText) {
             EditText field = (EditText) view;
-            field.setTextColor(getResources().getColor(primaryColor));
-            field.setHintTextColor(getResources().getColor(secondaryColor));
-            field.setBackgroundResource(dark ? R.drawable.settings_input_dark : R.drawable.settings_input_light);
+            field.setBackgroundDrawable(Ui.field(context, p, false));
+            field.setPadding(dp(12), 0, dp(12), 0);
+            field.setTextColor(p.text);
+            field.setHintTextColor(p.muted);
             field.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
-            field.setMinHeight(dp(48));
         } else if (view instanceof CheckBox) {
-            CheckBox checkBox = (CheckBox) view;
-            checkBox.setTextColor(getResources().getColor(primaryColor));
-            checkBox.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
-            int[][] states = new int[][]{
-                    new int[]{android.R.attr.state_checked}, new int[]{}
-            };
-            int[] colors = new int[]{
-                    getResources().getColor(R.color.oda_accent),
-                    getResources().getColor(dark ? R.color.oda_text_primary : R.color.settings_text_secondary)
-            };
-            CompoundButtonCompat.setButtonTintList(checkBox, new ColorStateList(states, colors));
-            alignToStart(checkBox, true);
-            view.setMinimumHeight(dp(48));
-        } else if (view instanceof Spinner) {
-            view.setBackgroundResource(dark ? R.drawable.settings_spinner_dark : R.drawable.settings_spinner_light);
-            view.setMinimumHeight(dp(48));
+            CheckBox row = (CheckBox) view;
+            GradientDrawable none = new GradientDrawable();
+            none.setSize(0, 0);
+            row.setButtonDrawable(none);
+            row.setCompoundDrawablesWithIntrinsicBounds(null, null, Ui.switchDrawable(context, p), null);
+            row.setCompoundDrawablePadding(dp(16));
+            row.setBackgroundDrawable(inGroup ? Ui.rowBackground(context, p)
+                    : Ui.pressable(Ui.rounded(context, p.surface, 14, p.hairline),
+                    Ui.rounded(context, p.selected, 14, p.hairline)));
+            row.setPadding(dp(16), dp(8), dp(16), dp(8));
+            row.setTextColor(p.text);
+            row.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+            alignToStart(row, true);
+        } else if (view instanceof Button) {
+            // CheckBox is a Button too, so this comes after it: plain buttons
+            // (keymap hotspots, theme segments) keep the style they were given.
+            return;
         } else if (view instanceof TextView) {
             TextView text = (TextView) view;
-            text.setTextColor(getResources().getColor(primaryColor));
+            boolean quiet = "section".equals(tag) || "hint".equals(tag);
+            text.setTextColor(quiet ? p.muted : p.text);
             text.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         }
     }
 
     private void alignToStart(View view, boolean fillWidth) {
         ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params == null) {
+            return;
+        }
         if (fillWidth) {
             params.width = ViewGroup.LayoutParams.MATCH_PARENT;
         }
@@ -89,7 +116,7 @@ public abstract class BaseSettingsFragment extends Fragment {
         view.setLayoutParams(params);
     }
 
-    private int dp(int value) {
+    protected int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 

@@ -11,6 +11,7 @@ public:
     typedef JTCPEndpoint* Pointer;
 
     JTCPEndpoint(JNIEnv *env, jobject jaoapDevice, std::string ipAddress);
+    JTCPEndpoint(JNIEnv *env, jobject jaoapDevice, int socketFd);
     ~JTCPEndpoint();
 
     static jfieldID handleId;
@@ -19,6 +20,7 @@ public:
     ITCPEndpoint::Pointer getTCPEnpoint();
 private:
     ITCPEndpoint::SocketPointer connect(JNIEnv* env, aasdk::io::ioService& ioService, std::string ipAddress);
+    ITCPEndpoint::SocketPointer assignSocketFd(JNIEnv* env, aasdk::io::ioService& ioService, int socketFd);
     void throwConnectException(JNIEnv *env, char *message );
 
     TCPWrapper tcpWrapper_;

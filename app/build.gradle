@@ -8,12 +8,14 @@ android {
     compileSdk rootProject.ext.compileSdk
 
     defaultConfig {
-        applicationId "it.smg.hu"
+        // Not it.smg.hu: this build installs next to the original app.
+        applicationId "it.smg.hu.fork"
         minSdkVersion rootProject.ext.minSdk
         //noinspection ExpiredTargetSdkVersion
         targetSdkVersion rootProject.ext.targetSdk
         versionCode rootProject.ext.versionCode
         versionName rootProject.ext.versionName
+        versionNameSuffix "-fork"
         multiDexEnabled true
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

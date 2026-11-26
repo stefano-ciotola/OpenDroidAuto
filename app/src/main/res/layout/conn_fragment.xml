@@ -1,30 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="@color/settings_surface"
-    android:layout_marginBottom="16dp"
-    android:paddingLeft="8dp"
-    android:paddingRight="8dp">
+    android:paddingBottom="8dp">
 
-    <CheckBox
-        android:id="@+id/enable_ad2p"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/conn_settings_enableAd2p"
-        android:textColor="@color/settings_text_primary" />
+    <TextView style="@style/SettingsSection" android:tag="section" android:layout_marginTop="4dp"
+        android:text="@string/settings_section_bluetooth" />
 
-    <CheckBox
-        android:id="@+id/enable_hfp"
-        android:layout_width="match_parent"
-        android:layout_height="52dp"
-        android:layout_gravity="left"
-        android:layout_marginTop="6dp"
-        android:text="@string/conn_settings_enableHfp"
-        android:textColor="@color/settings_text_primary" />
-
-
+    <LinearLayout style="@style/SettingsGroup" android:tag="group">
+        <CheckBox android:id="@+id/enable_ad2p" style="@style/SettingsSwitch" android:text="@string/conn_settings_enableAd2p" />
+        <View style="@style/SettingsDivider" android:tag="divider" />
+        <CheckBox android:id="@+id/enable_hfp" style="@style/SettingsSwitch" android:text="@string/conn_settings_enableHfp" />
+    </LinearLayout>
 </LinearLayout>

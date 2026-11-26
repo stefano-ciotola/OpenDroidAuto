@@ -70,6 +70,15 @@ public class AdvancedFragment extends BaseSettingsFragment {
         CheckBox enableHondaiMid = view.findViewById(R.id.enable_hondaimid);
         initCheckBox(enableHondaiMid, settings.advanced, Settings.Advanced.ADVANCED_ENABLE_HONDA_IMID, Settings.Advanced.ADVANCED_ENABLE_HONDA_IMID_DEFAULT_VALUE);
 
+        CheckBox keepSource = view.findViewById(R.id.honda_keep_source);
+        initCheckBox(keepSource, settings.advanced, Settings.Advanced.ADVANCED_HONDA_KEEP_SOURCE, Settings.Advanced.ADVANCED_HONDA_KEEP_SOURCE_DEFAULT_VALUE);
+
+        CheckBox returnToProjection = view.findViewById(R.id.honda_return_to_projection);
+        initCheckBox(returnToProjection, settings.advanced, Settings.Advanced.ADVANCED_HONDA_RETURN_TO_PROJECTION, Settings.Advanced.ADVANCED_HONDA_RETURN_TO_PROJECTION_DEFAULT_VALUE);
+
+        CheckBox blockBtVoice = view.findViewById(R.id.honda_block_bt_voice);
+        initCheckBox(blockBtVoice, settings.advanced, Settings.Advanced.ADVANCED_HONDA_BLOCK_BT_VOICE, Settings.Advanced.ADVANCED_HONDA_BLOCK_BT_VOICE_DEFAULT_VALUE);
+
         Spinner swMode = view.findViewById(R.id.sw_mode);
         initSpinner(swMode, R.array.swmode, R.array.swmode, settings.advanced, Settings.Advanced.ADVANCED_SW_MODE, Settings.Advanced.ADVANCED_SW_MODE_DEFAULT_VALUE, () -> {
             EditText swIdx =  view.findViewById(R.id.steeringwheel_idx);

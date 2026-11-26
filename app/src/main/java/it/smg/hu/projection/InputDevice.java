@@ -17,6 +17,8 @@ import java.util.Map;
 
 import it.smg.hu.config.Settings;
 import it.smg.hu.manager.HondaConnectManager;
+import it.smg.hu.manager.steering.HondaKeys;
+import it.smg.hu.manager.steering.SteeringKeyRouter;
 import it.smg.hu.ui.settings.KeymapFragment;
 import it.smg.libs.common.Log;
 
@@ -31,6 +33,17 @@ public class InputDevice extends it.smg.libs.aasdk.projection.InputDevice implem
     private SurfaceView surfaceView_;
     private InputDevice.OnKeyHolder keyHolder_;
     private Context context_;
+
+    // The input device of the running projection, for steering wheel keys
+    // that arrive from Honda callbacks rather than through a window. Native
+    // sends and teardown take the lock, so a key never reaches a deleted
+    // device; nothing slow (no binder call) runs while it is held.
+    private static final Object ACTIVE_LOCK = new Object();
+    private static InputDevice active_;
+
+    private static final int NOT_MAPPED = Integer.MIN_VALUE;
+    private static final int HONDA_VOLUME_UP = Integer.MIN_VALUE + 1;
+    private static final int HONDA_VOLUME_DOWN = Integer.MIN_VALUE + 2;
 
     public InputDevice(Context ctx, SurfaceView surfaceView, InputDevice.OnKeyHolder keyHolder){
         surfaceView_ = surfaceView;
@@ -88,6 +101,9 @@ public class InputDevice extends it.smg.libs.aasdk.projection.InputDevice implem
     @Keep
     @Override
     public void start() {
+        synchronized (ACTIVE_LOCK) {
+            active_ = this;
+        }
         gainFocus();
     }
 
@@ -95,9 +111,66 @@ public class InputDevice extends it.smg.libs.aasdk.projection.InputDevice implem
     @Override
     public void stop() {
         if (Log.isInfo()) Log.i(TAG, "stop");
+        synchronized (ACTIVE_LOCK) {
+            if (active_ == this) {
+                active_ = null;
+            }
+        }
         releaseFocus();
         surfaceView_ = null;
         keyHolder_ = null;
+    }
+
+    @Override
+    public void delete() {
+        synchronized (ACTIVE_LOCK) {
+            if (active_ == this) {
+                active_ = null;
+            }
+        }
+        super.delete();
+    }
+
+    /** True while a projection is running and can take keys. */
+    public static boolean projectionRunning() {
+        synchronized (ACTIVE_LOCK) {
+            return active_ != null;
+        }
+    }
+
+    /** True when the running projection's key map has an action for this key code. */
+    public static boolean isMapped(int keyCode) {
+        synchronized (ACTIVE_LOCK) {
+            return active_ != null && active_.resolve(keyCode) != NOT_MAPPED;
+        }
+    }
+
+    /**
+     * Sends a steering wheel key (a key map code, KEYCODE_STRG_*) to the phone
+     * as a press and a release, whichever window has focus. False when no
+     * projection is running or the key map has no action for the key.
+     */
+    public static boolean sendSteeringKey(int keyCode) {
+        final int target;
+        synchronized (ACTIVE_LOCK) {
+            final InputDevice device = active_;
+            if (device == null) {
+                return false;
+            }
+            target = device.resolve(keyCode);
+            if (target == NOT_MAPPED) {
+                return false;
+            }
+            if (target != HONDA_VOLUME_UP && target != HONDA_VOLUME_DOWN) {
+                device.logButton(keyCode, KeyEvent.ACTION_DOWN, target);
+                device.sendButtonEvent(KeyEvent.ACTION_DOWN, target);
+                device.sendButtonEvent(KeyEvent.ACTION_UP, target);
+                return true;
+            }
+        }
+        // A binder call into the head unit: outside the lock.
+        changeHondaVolume(target);
+        return true;
     }
 
     @Keep
@@ -173,35 +246,83 @@ public class InputDevice extends it.smg.libs.aasdk.projection.InputDevice implem
 
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
-        if (supportedButtonCodes_ != null && supportedButtonCodes_.containsKey(keyCode)) {
-            int button = supportedButtonCodes_.get(keyCode);
-            if (Log.isVerbose()) Log.v(TAG, "found supported button " + button + "/" + keyCode);
-            if (Log.isDebug()) {
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    Toast.makeText(context_, "event key: " + keyCode + " action: " + event.getAction() + " -> button: " + button, Toast.LENGTH_SHORT).show();
-                });
-            }
-
-            final int plusKeyCode = Settings.instance().keymap.key(KeymapFragment.KeyMap.PLUS.keyName() + "_code");
-            final int minusKeyCode = Settings.instance().keymap.key(KeymapFragment.KeyMap.MINUS.keyName() + "_code");
-
-            if (keyCode == plusKeyCode && Settings.instance().advanced.hondaIntegrationEnabled()){
-                if (event.getAction() == KeyEvent.ACTION_DOWN) { // increase/decrease volume only on action down to prevent double increase/decrease
-                    HondaConnectManager.instance().increaseVolume();
+        final int action = event.getAction(); // 1 - UP, 0 - DOWN
+        if (HondaKeys.fromStrgCode(keyCode) != HondaKeys.Key.UNKNOWN
+                && Settings.instance().advanced.hondaIntegrationEnabled()) {
+            // A Honda steering wheel key: the router sends it (press and
+            // release) once, even when a callback delivers the same press.
+            final HondaConnectManager honda = HondaConnectManager.instance();
+            if (honda != null) {
+                if (action == KeyEvent.ACTION_DOWN) {
+                    final SteeringKeyRouter.Result result = honda.onWindowSteeringKey(keyCode, event.getRepeatCount());
+                    // WINDOW: left to the window, which already has it.
+                    return result.consumed() && result.outcome != SteeringKeyRouter.Outcome.WINDOW;
                 }
-            } else if (keyCode == minusKeyCode && Settings.instance().advanced.hondaIntegrationEnabled()) {
-                if (event.getAction() == KeyEvent.ACTION_DOWN) { // increase/decrease volume only on action down to prevent double increase/decrease
-                    HondaConnectManager.instance().decreaseVolume();
-                }
-            } else {
-                int action = event.getAction(); // 1 - UP, 0 - DOWN
-                sendButtonEvent(action, button);
+                return resolve(keyCode) != NOT_MAPPED;
             }
-
-            return true;
         }
+        final int target = resolve(keyCode);
+        if (target == NOT_MAPPED) {
+            return false;
+        }
+        if (target == HONDA_VOLUME_UP || target == HONDA_VOLUME_DOWN) {
+            // Only on action down, so one press changes the volume by one step.
+            if (action == KeyEvent.ACTION_DOWN) {
+                changeHondaVolume(target);
+            }
+        } else {
+            logButton(keyCode, action, target);
+            sendButtonEvent(action, target);
+        }
+        return true;
+    }
 
-        return false;
+    /**
+     * What a key map code does: an Android Auto button code, a head unit
+     * volume step (the volume keys with the Honda integration on), or
+     * NOT_MAPPED.
+     */
+    private int resolve(int keyCode) {
+        final Map<Integer, Integer> codes = supportedButtonCodes_;
+        if (codes == null) {
+            return NOT_MAPPED;
+        }
+        final Integer button = codes.get(keyCode);
+        if (button == null) {
+            return NOT_MAPPED;
+        }
+        final Settings settings = Settings.instance();
+        if (settings.advanced.hondaIntegrationEnabled()) {
+            if (keyCode == settings.keymap.key(KeymapFragment.KeyMap.PLUS.keyName() + "_code")) {
+                return HONDA_VOLUME_UP;
+            }
+            if (keyCode == settings.keymap.key(KeymapFragment.KeyMap.MINUS.keyName() + "_code")) {
+                return HONDA_VOLUME_DOWN;
+            }
+        }
+        return button;
+    }
+
+    private static void changeHondaVolume(int target) {
+        final HondaConnectManager honda = HondaConnectManager.instance();
+        if (honda == null) {
+            return;
+        }
+        if (target == HONDA_VOLUME_UP) {
+            honda.increaseVolume();
+        } else {
+            honda.decreaseVolume();
+        }
+    }
+
+    private void logButton(int keyCode, int action, int button) {
+        if (Log.isVerbose()) Log.v(TAG, "found supported button " + button + "/" + keyCode);
+        if (Log.isDebug() && context_ != null) {
+            final Context context = context_;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                Toast.makeText(context, "event key: " + keyCode + " action: " + action + " -> button: " + button, Toast.LENGTH_SHORT).show();
+            });
+        }
     }
 
     public interface OnKeyHolder {

@@ -1,5 +1,6 @@
 package it.smg.hu.projection;
 
+import it.smg.hu.manager.HondaConnectManager;
 import it.smg.libs.aasdk.messenger.ChannelId;
 import it.smg.libs.common.Log;
 
@@ -14,16 +15,25 @@ public class MediaAudioOutput extends AudioOutput {
         sampleSize_ = settings_.audio.mediaSampleSize();
         sampleRate_ = settings_.audio.mediaSampleRate();
 
-        if (settings_.advanced.hondaIntegrationEnabled()){
-            audioCodecStreamType_ = hondaConnectManager_.mediaAudioStream(ChannelId.MEDIA_AUDIO);
+        HondaConnectManager hondaManager = settings_.advanced.hondaIntegrationEnabled() ? HondaConnectManager.instance() : null;
+        if (hondaManager != null){
+            audioCodecStreamType_ = hondaManager.mediaAudioStream(ChannelId.MEDIA_AUDIO);
         }
+    }
+
+    private HondaConnectManager hondaManager() {
+        if (!settings_.advanced.hondaIntegrationEnabled()) {
+            return null;
+        }
+        return HondaConnectManager.instance();
     }
 
     @Override
     public void start() {
-        if (settings_.advanced.hondaIntegrationEnabled()){
+        HondaConnectManager hondaManager = hondaManager();
+        if (hondaManager != null){
             if (Log.isDebug()) Log.d(TAG, "requestAudioFocus");
-            hondaConnectManager_.requestAudioFocus();
+            hondaManager.onMediaStarted();
         }
 
         super.start();
@@ -31,9 +41,10 @@ public class MediaAudioOutput extends AudioOutput {
 
     @Override
     public void stop() {
-        if (settings_.advanced.hondaIntegrationEnabled()){
+        HondaConnectManager hondaManager = hondaManager();
+        if (hondaManager != null){
             if (Log.isDebug()) Log.d(TAG, "releaseAudioFocus");
-            hondaConnectManager_.releaseAudioFocus();
+            hondaManager.onMediaStopped();
         }
 
         super.stop();
@@ -41,9 +52,10 @@ public class MediaAudioOutput extends AudioOutput {
 
     @Override
     public void suspend() {
-        if (settings_.advanced.hondaIntegrationEnabled()){
+        HondaConnectManager hondaManager = hondaManager();
+        if (hondaManager != null){
             if (Log.isDebug()) Log.d(TAG, "releaseAudioFocus");
-            hondaConnectManager_.releaseAudioFocus();
+            hondaManager.onMediaStopped();
         }
 
         super.suspend();

@@ -22,6 +22,7 @@ public:
     virtual void close(boost::asio::ip::tcp::socket& socket) = 0;
     virtual void asyncConnect(boost::asio::ip::tcp::socket& socket, const std::string& hostname, uint16_t port, ConnectHandler handler) = 0;
     virtual boost::system::error_code connect(boost::asio::ip::tcp::socket& socket, const std::string& hostname, uint16_t port) = 0;
+    virtual boost::system::error_code assignFd(boost::asio::ip::tcp::socket& socket, int fd) = 0;
 };
 
 }

@@ -2,9 +2,11 @@ package it.smg.hu;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 
 import androidx.multidex.MultiDexApplication;
 
+import it.smg.hu.config.AppLocale;
 import it.smg.hu.config.ODALog;
 import it.smg.hu.config.Settings;
 import it.smg.hu.manager.HondaConnectManager;
@@ -24,6 +26,13 @@ public class ODAApplication extends MultiDexApplication {
     private static final String TAG = "ODAApplication";
 
     @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // The system has just written its own locale back into the resources.
+        AppLocale.apply(this);
+    }
+
+    @Override
     public void onTerminate() {
         super.onTerminate();
         Log.shutdown();
@@ -35,6 +44,7 @@ public class ODAApplication extends MultiDexApplication {
         super.attachBaseContext(base);
 
         Settings.build(base);
+        AppLocale.apply(base);
 
         final Thread.UncaughtExceptionHandler previousHandler = Thread.getDefaultUncaughtExceptionHandler();
         Runtime.setExceptionHandler((thread, t) -> {
@@ -69,6 +79,7 @@ public class ODAApplication extends MultiDexApplication {
 
     public void onCreate() {
         super.onCreate();
+        AppLocale.apply(this);
 
 //        if (Log.isDebug()) Log.d(TAG, "Initialized jni: " + Runtime.handle());
 

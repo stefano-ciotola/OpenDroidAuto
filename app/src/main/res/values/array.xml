@@ -24,11 +24,34 @@
         <item>2</item>
     </integer-array>
 
-    <string-array name="video_nightmode">
+    <!-- Stored values (compared in DayNightSensor/DeviceFactory): never translate. -->
+    <string-array name="video_nightmode" translatable="false">
         <item>DEVICE</item>
         <item>TIME/GPS</item>
         <item>DAY</item>
         <item>NIGHT</item>
+    </string-array>
+
+    <string-array name="video_nightmode_labels">
+        <item>DEVICE</item>
+        <item>TIME/GPS</item>
+        <item>DAY</item>
+        <item>NIGHT</item>
+    </string-array>
+
+    <!-- Each language is named in its own language. -->
+    <string-array name="app_language_labels" translatable="false">
+        <item>Italiano</item>
+        <item>English</item>
+        <item>Português</item>
+        <item>@string/app_language_system</item>
+    </string-array>
+
+    <string-array name="app_language_values" translatable="false">
+        <item>it</item>
+        <item>en</item>
+        <item>pt</item>
+        <item>system</item>
     </string-array>
 
     <string-array name="audio_codec_labels">

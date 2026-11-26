@@ -12,13 +12,38 @@ public class OMXVideoCodec {
 
     private static final String TAG = "OMXVideoCodec";
 
+    // Decoder options, a bit mask shared with DecoderOptions.h on the native side.
+    /** Hand the decoder one input buffer at a time (lower display latency). */
+    public static final int OPTION_ONE_INPUT_BUFFER = 1;
+    /** All three Nvidia decoder parameters below at once (older builds). */
+    public static final int OPTION_NVIDIA_LOW_LATENCY = 1 << 1;
+    /** Previous behaviour: flush the backlog after 8 frames / 250 ms and wait for an IDR. */
+    public static final int OPTION_LEGACY_DROP = 1 << 2;
+    /** Collect per-stage statistics, see {@link #statsReport()}. */
+    public static final int OPTION_STATS = 1 << 3;
+    /** Rewrite the stream's SPS so the decoder shows each frame as soon as it is decoded. */
+    public static final int OPTION_SPS_LOW_LATENCY = 1 << 4;
+    /** Nvidia decoder parameter OMX.Nvidia.index.param.uselowbuffer. */
+    public static final int OPTION_NVIDIA_LOW_BUFFER = 1 << 5;
+    /** Nvidia decoder parameter OMX.Nvidia.index.param.h264disabledpb. */
+    public static final int OPTION_NVIDIA_NO_DPB = 1 << 6;
+    /** Nvidia decoder parameter OMX.Nvidia.index.param.vdecfullframedata. */
+    public static final int OPTION_NVIDIA_FULL_FRAME = 1 << 7;
+    /** With the SPS rewrite: raise a declared level below 3.1 to 3.1. */
+    public static final int OPTION_SPS_LEVEL_31 = 1 << 8;
+    /** Hand the decoder an empty buffer when no frame arrives, so the decoded one is shown at once. */
+    public static final int OPTION_IDLE_PUSH = 1 << 9;
+    /** Park the decoder's input-done callbacks while no frame waits, so decoded frames come out at once. */
+    public static final int OPTION_EARLY_RELEASE = 1 << 10;
+
     private static native void nativeInit();
     private native long nativeSetup();
     private native void nativeSurfaceInit(Object surface, int width, int height);
-    private native boolean nativeDecoderInit(int fps);
+    private native boolean nativeDecoderInit(int fps, int options);
     private native void nativeDelete();
     private native void nativeConsume(ByteBuffer buf, int len, long t);
     private native void nativeSetSps(ByteBuffer buf, int len);
+    private static native String nativeStatsReport();
 
     @Keep
     private long handle_ = 0;
@@ -29,7 +54,8 @@ public class OMXVideoCodec {
     private Surface surfaceView_;
     private int width_;
     private int height_;
-    private int fps_;
+    private final int fps_;
+    private final int options_;
 
     static {
         System.loadLibrary("c++_shared");
@@ -39,20 +65,40 @@ public class OMXVideoCodec {
         nativeInit();
     }
 
-    public OMXVideoCodec(int fps){
+    public OMXVideoCodec(int fps, int options){
         handle_ = nativeSetup();
         fps_ = fps;
+        options_ = options;
     }
 
     public void setSurface(Surface surface, int width, int height){
-        surfaceView_ = surface;
-        width_ = width;
-        height_ = height;
-        nativeSurfaceInit (surface, height_, width_);
+        synchronized (codecLock_) {
+            if (handle_ == 0) {
+                return;
+            }
+            surfaceView_ = surface;
+            width_ = width;
+            height_ = height;
+            nativeSurfaceInit(surface, width_, height_);
+        }
     }
 
     public boolean init() {
-        return nativeDecoderInit(fps_);
+        synchronized (codecLock_) {
+            if (handle_ == 0) {
+                return false;
+            }
+            return nativeDecoderInit(fps_, options_);
+        }
+    }
+
+    /**
+     * Latest statistics report, a few lines of plain text refreshed every two
+     * seconds, or null when statistics are off or no window has closed yet.
+     * Never blocks on the decoder.
+     */
+    public static String statsReport() {
+        return nativeStatsReport();
     }
 
     public void shutdown() {

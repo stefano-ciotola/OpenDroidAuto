@@ -2,15 +2,18 @@ package it.smg.hu.manager;
 
 import android.annotation.SuppressLint;
 import android.app.Instrumentation;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.media.AudioTrack;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.widget.Toast;
 
 import com.fujitsu_ten.displayaudio.android.content.CustomContext;
@@ -38,13 +41,19 @@ import com.fujitsu_ten.displayaudio.whitelist.common.IWhiteList;
 import com.fujitsu_ten.displayaudio.whitelist.common.ProcessControl;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import it.smg.hu.config.Settings;
+import it.smg.hu.manager.steering.HondaEventLog;
+import it.smg.hu.manager.steering.ProjectionReturnPolicy;
+import it.smg.hu.manager.steering.SteeringKeyRouter;
+import it.smg.hu.projection.InputDevice;
 import it.smg.hu.ui.PlayerActivity;
+import it.smg.hu.ui.settings.KeymapFragment;
 import it.smg.libs.aasdk.messenger.ChannelId;
 import it.smg.libs.aasdk.projection.ISensor;
 import it.smg.libs.common.Log;
@@ -79,12 +88,24 @@ public class HondaConnectManager {
     private static final String TAG = "HondaConnectManager";
 
     private static final long HEARTBEAT_INTERVAL_MS = 4000;
+    // After a call, Siri or a traffic announcement the head unit gives the
+    // audio back to the radio: take it back once things settle, and check
+    // again a little later in case the head unit switched once more.
+    private static final long SOURCE_RECLAIM_DELAY_MS = 1000;
+    private static final long SOURCE_RECLAIM_RECHECK_MS = 3000;
+    private static final int SOURCE_RECLAIM_ATTEMPTS = 2;
+    private static final int FOCUS_WAIT_TIMEOUT_MS = 250;
+    private static final String MODE_MGR_THREAD_NAME = "ODA-Honda-ModeMgr";
 
     private static HondaConnectManager instance_;
 
     private /*final*/ ModeMgrManager modeMgrManager_;
     private /*final*/ StateMgrManager stateMgrManager_;
     private StatusBarExManager statusBarExManager_;
+    private static final long[] CLOCK_HIDE_RETRY_MS = {300, 1000, 3000};
+    private volatile boolean hideFullScreenClock_;
+    private volatile String clockStatus_;
+    private int clockCalls_;
 
     private IModeMgrServiceCallBack modeMgrServiceAudioVideoCallBack_;
     private IModeMgrServiceCallBack modeMgrServiceVideoCallBack_;
@@ -101,31 +122,67 @@ public class HondaConnectManager {
     private IModeMgrServiceSWSmartPhoneCallBack modeMgrServiceSWSmartPhoneCallBack_;
     private IModeMgrInspectionCallBack modeMgrInspectionCallBack_;
 
-    private boolean micVrStarted_;
+    private volatile boolean micVrStarted_;
 
     // Bluetooth
     private BluetoothVr bluetoothVR_;
     private BluetoothVrListener bluetoothVrListener_;
-    private boolean btVoiceControlRights_;
+    private volatile boolean btVoiceControlRights_;
 
     private final Context context_;
     private final Settings settings_;
 
-    private boolean restoreActivity_;
-    private boolean isRunning_;
-    private boolean hasAudioFocus_;
-    private boolean hasAudioFocusForMic_;
+    private volatile boolean isRunning_;
+    private volatile boolean hasAudioFocus_;
+    private volatile boolean hasAudioFocusForMic_;
     private ProcessControl pControl_;
-    private CountDownLatch waitCondOn_;
-    private CountDownLatch waitCondOff_;
+    private final Object focusLock_ = new Object();
+    private final Object callbackLock_ = new Object();
+    private final Object micLock_ = new Object();
+    private final Object heartbeatLock_ = new Object();
+    private volatile boolean inForeground_;
+    private volatile CountDownLatch waitCondOn_;
+    private volatile CountDownLatch waitCondOff_;
 
+    private final ExecutorService modeMgrExecutor_;
     private ScheduledExecutorService heartbeatExecutor_;
     private ScheduledFuture<?> heartbeatFuture_;
-    private int currentModeState_;
-    private int currentIdx_;
+    private volatile int currentModeState_;
+    private volatile int currentIdx_;
 
     private final Handler mainHandler_;
     private ISensor.Listener dayNightListener_;
+
+    // Steering wheel keys, the return to the projection after the head unit
+    // took the screen, and what the statistics overlay shows about both.
+    private final HondaEventLog keyEvents_ = new HondaEventLog(4);
+    private final HondaEventLog headUnitEvents_ = new HondaEventLog(4);
+    private final SteeringKeyRouter steeringKeys_;
+    private final ProjectionReturnPolicy returnPolicy_;
+    private final Object headUnitLock_ = new Object();
+    // Last head unit state reported by the state manager; -1 until known.
+    private int siriState_ = -1;
+    private int voiceTagState_ = -1;
+    private int hftState_ = -1;
+    private int hftPopup_ = -1;
+    private int videoAddress_ = -1;
+    private int audioAddress_ = -1;
+    private int rdsInterrupt_ = -1;
+    private int rdsAlarmInterrupt_ = -1;
+    private boolean audioInterrupted_;
+    private int reclaimAttempts_;
+    private int reclaims_;
+    private final Object btVoiceReceiverLock_ = new Object();
+    private BroadcastReceiver btVoiceReceiver_;
+    // Media is playing (between MediaAudioOutput start and stop).
+    private volatile boolean mediaPlaying_;
+
+    // Optional (Advanced > Honda, off by default): hold the Bluetooth voice
+    // control rights while the projection is on screen, in case the head unit
+    // needs them to start Siri over Bluetooth hands-free.
+    private BluetoothVrListener voiceGuardListener_;
+    private boolean voiceRightsHeld_;
+    private volatile String voiceGuardStatus_ = "off";
 
     public static void init(Context context){
         instance_ = new HondaConnectManager(context);
@@ -144,8 +201,51 @@ public class HondaConnectManager {
         hasAudioFocusForMic_ = false;
         micVrStarted_ = false;
         isRunning_ = false;
-        restoreActivity_ = false;
         mainHandler_ = new Handler(Looper.getMainLooper());
+        steeringKeys_ = new SteeringKeyRouter(new SteeringKeyRouter.Output() {
+            @Override
+            public boolean projectionRunning() {
+                // The key map screen learns keys from its window, even while
+                // a projection runs in the background.
+                return InputDevice.projectionRunning() && !KeymapFragment.isOnScreen();
+            }
+
+            @Override
+            public boolean mapped(int keymapCode) {
+                return InputDevice.isMapped(keymapCode);
+            }
+
+            @Override
+            public boolean toProjection(int keymapCode) {
+                return InputDevice.sendSteeringKey(keymapCode);
+            }
+
+            @Override
+            public boolean injectIntoWindow(int strgCode) {
+                return injectKey(strgCode);
+            }
+        }, SystemClock::elapsedRealtime);
+        returnPolicy_ = new ProjectionReturnPolicy(new ProjectionReturnPolicy.Actions() {
+            @Override
+            public void restoreProjection(String cause) {
+                mainHandler_.post(() -> bringProjectionToFront(cause));
+            }
+
+            @Override
+            public void schedule(Runnable task, long delayMs) {
+                mainHandler_.postDelayed(task, delayMs);
+            }
+
+            @Override
+            public void cancel(Runnable task) {
+                mainHandler_.removeCallbacks(task);
+            }
+        }, SystemClock::elapsedRealtime);
+        modeMgrExecutor_ = Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, MODE_MGR_THREAD_NAME);
+            thread.setDaemon(true);
+            return thread;
+        });
         currentModeState_ = 0;
         currentIdx_ = 255;
 
@@ -182,7 +282,9 @@ public class HondaConnectManager {
 
                 registerSteeringMenuCallback();
 
-                if (!isPreinstall()){
+                // The steering menu announcement is what makes the head unit
+                // hand the wheel keys to this app (see initAudioBinding).
+                if (!isPreinstall() || inForeground_){
                     notifySteeringMenuDispMode(1);
                 }
 
@@ -205,7 +307,9 @@ public class HondaConnectManager {
         }
 
         try {
-            pControl_ = IWhiteList.getProcessControl("it.smg.hu", null);
+            // Keyed by package: a build with another applicationId has its own
+            // Honda Permissions entry (and Honda enforces that one).
+            pControl_ = IWhiteList.getProcessControl(context_.getPackageName(), null);
             if (pControl_ != null) {
                 if (Log.isDebug()) {
                     Log.d(TAG, "ProcessControl [ ");
@@ -253,39 +357,97 @@ public class HondaConnectManager {
         }
     }
 
+    private void runOnModeMgrExecutor(Runnable action) {
+        if (MODE_MGR_THREAD_NAME.equals(Thread.currentThread().getName())) {
+            action.run();
+        } else {
+            modeMgrExecutor_.execute(action);
+        }
+    }
+
     public void requestAudioFocus(){
-        // If AUTH_TYPE <> preinstall the app has already audio focus
-        if (isPreinstall() && modeMgrManager_ != null && !hasAudioFocus_) {
-            requestFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_BOTH);
+        // If AUTH_TYPE <> preinstall the app has already audio focus.
+        // Dispatch off the caller thread and check hasAudioFocus_ serially on modeMgrExecutor_
+        // so native aasdk io_service workers never block and rapid start/suspend transitions stay ordered.
+        if (isPreinstall() && modeMgrManager_ != null) {
+            runOnModeMgrExecutor(() -> {
+                if (!isRunning_ || !inForeground_ || hasAudioFocus_ || modeMgrManager_ == null) {
+                    return;
+                }
+                requestFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_BOTH);
+                if (!isRunning_ || !inForeground_) {
+                    return;
+                }
 
-            if (Log.isDebug()) Log.d(TAG, "requestAudioFocus statusBarExManager_ audioSourceStartUp");
-            statusBarExManager_.audioSourceStartUp(StatusBarExConst.SOURCE_NAME_BLUETOOTH);
-            StatusBarExManagerData data = new StatusBarExManagerData();
+                if (statusBarExManager_ != null) {
+                    if (Log.isDebug()) Log.d(TAG, "requestAudioFocus statusBarExManager_ audioSourceStartUp");
+                    statusBarExManager_.audioSourceStartUp(StatusBarExConst.SOURCE_NAME_BLUETOOTH);
+                    StatusBarExManagerData data = new StatusBarExManagerData();
 
-            if (settings_.advanced.modeMgrAudioVideoIdx() == 197) {
-                data.mSourceName = StatusBarExConst.SOURCE_NAME_BLUETOOTH;
-            } else {
-                data.mSourceName = StatusBarExConst.SOURCE_NAME_3RD_PARTY_AUTH;
-            }
+                    if (settings_.advanced.modeMgrAudioVideoIdx() == 197) {
+                        data.mSourceName = StatusBarExConst.SOURCE_NAME_BLUETOOTH;
+                    } else {
+                        data.mSourceName = StatusBarExConst.SOURCE_NAME_3RD_PARTY_AUTH;
+                    }
 
-            statusBarExManager_.requestInterruptDraw(0, data);
+                    statusBarExManager_.requestInterruptDraw(0, data);
+                    reapplyFullScreenClockHidden();
+                }
 
-            registerSteeringMenuCallback();
-            registerModeMgrSWCallbacks();
-            notifySteeringMenuDispMode(1);
+                registerSteeringMenuCallback();
+                registerModeMgrSWCallbacks();
+                notifySteeringMenuDispMode(1);
+            });
         }
     }
 
     public void releaseAudioFocus(){
-        // If AUTH_TYPE <> preinstall the app has already audio focus
-        if (isPreinstall() && modeMgrManager_ != null && hasAudioFocus_) {
-            releaseFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
-            requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
+        // If AUTH_TYPE <> preinstall the app has already audio focus.
+        if (isPreinstall() && modeMgrManager_ != null) {
+            runOnModeMgrExecutor(() -> {
+                if (!isRunning_ || !hasAudioFocus_ || modeMgrManager_ == null) {
+                    return;
+                }
+                if (inForeground_ && settings_.advanced.keepSourceOnScreen()) {
+                    // Media paused while the projection is on screen: it stays
+                    // the head unit's source, as on a CarPlay or Android Auto
+                    // head unit. The key callbacks are registered on the
+                    // address of that source, and the head unit seems to
+                    // deliver the steering wheel keys to the current source
+                    // (not documented): keeping it should keep Talk reaching
+                    // the phone instead of starting the head unit's own Siri.
+                    // Released when the player leaves the screen
+                    // (sendToBackground).
+                    if (Log.isDebug()) Log.d(TAG, "releaseAudioFocus -> kept: projection on screen");
+                    return;
+                }
+                releaseFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
+                if (isRunning_) {
+                    requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
+                }
 
-            unregisterSteeringMenuCallback();
-            unregisterModeMgrSWCallbacks();
-            notifySteeringMenuDispMode(0);
+                // Media paused does not mean the user stopped using the
+                // projection: while it is on screen the steering wheel keys
+                // must keep reaching it.
+                if (!inForeground_) {
+                    unregisterSteeringMenuCallback();
+                    unregisterModeMgrSWCallbacks();
+                    notifySteeringMenuDispMode(0);
+                }
+            });
         }
+    }
+
+    /** Android Auto media started (MediaAudioOutput.start). */
+    public void onMediaStarted(){
+        mediaPlaying_ = true;
+        requestAudioFocus();
+    }
+
+    /** Android Auto media stopped or was suspended (MediaAudioOutput.stop/suspend). */
+    public void onMediaStopped(){
+        mediaPlaying_ = false;
+        releaseAudioFocus();
     }
 
     private void requestFocus(int idx, int mode){
@@ -294,59 +456,75 @@ public class HondaConnectManager {
         if (Log.isDebug()) Log.d(TAG, "requestFocus modeMgr idx= " + idx + ", mode= " + mode);
 
         // If AUTH_TYPE <> preinstall the app has already audio focus
-        if (isPreinstall()) {
+        if (isPreinstall() && modeMgrManager_ != null) {
+            synchronized (focusLock_) {
+                if (!isRunning_) {
+                    return;
+                }
+                if (idx == currentIdx_ && mode == currentModeState_){
+                    if (Log.isWarn()) Log.w(TAG, "idx == currentIdx && mode == currentModeState -> do nothing");
+                    return;
+                }
 
-            if (idx == currentIdx_ && mode == currentModeState_){
-                if (Log.isWarn()) Log.w(TAG, "idx == currentIdx && mode == currentModeState -> do nothing");
-                return;
+                int sound_param = mode & ModeMgrMode.NOTIFY_AUDIO;
+                int image_param = mode & ModeMgrMode.NOTIFY_VIDEO;
+                if (Log.isDebug()) Log.d(TAG, "requestFocus sound_param= " + sound_param + ", image_param= " + image_param);
+
+                if (Log.isDebug()) Log.d(TAG, "requestFocus sendModeMgrOnReqForceVideo idx= " + idx + ", mode= " + mode);
+                CountDownLatch latch = new CountDownLatch(1);
+                waitCondOn_ = latch;
+                try {
+                    int ret = modeMgrManager_.sendModeMgrOnReqForceVideo(idx, mode);
+                    if (Log.isDebug()) Log.d(TAG, "requestFocus sendModeMgrOnReqForceVideo result= " + ret);
+
+                    if (Log.isDebug()) Log.d(TAG, "requestFocus -> wait for cond");
+                    waitForCond(FOCUS_WAIT_TIMEOUT_MS, latch);
+                } finally {
+                    if (waitCondOn_ == latch) {
+                        waitCondOn_ = null;
+                    }
+                }
             }
-
-            int ret;
-
-            int sound_param = mode & ModeMgrMode.NOTIFY_AUDIO;
-            int image_param = mode & ModeMgrMode.NOTIFY_VIDEO;
-            if (Log.isDebug()) Log.d(TAG, "requestFocus sound_param= " + sound_param + ", image_param= " + image_param);
-
-            if (Log.isDebug()) Log.d(TAG, "requestFocus sendModeMgrOnReqForceVideo idx= " + idx + ", mode= " + mode);
-            ret = modeMgrManager_.sendModeMgrOnReqForceVideo(idx, mode);
-            if (Log.isDebug()) Log.d(TAG, "requestFocus sendModeMgrOnReqForceVideo result= " + ret);
-
-            if (Log.isDebug()) Log.d(TAG, "requestFocus -> wait for cond");
-
-            waitCondOn_ = new CountDownLatch(1);
-            waitForCond(1000, waitCondOn_);
-            waitCondOn_ = null;
         }
     }
 
     private void releaseFocus(int idx, int mode){
-        if (Log.isDebug()) Log.d(TAG, "releaseFocus -> app with auth " + pControl_.authType);
+        if (Log.isDebug()) Log.d(TAG, "releaseFocus -> app with auth " + authType());
         if (Log.isDebug()) Log.d(TAG, "releaseFocus modeMgr audio hasAudioFocus= " + hasAudioFocus_);
 
         // If AUTH_TYPE <> preinstall the app has already audio focus
-        if (isPreinstall()) {
-            int ret;
+        if (isPreinstall() && modeMgrManager_ != null) {
+            synchronized (focusLock_) {
+                if (Log.isDebug()) Log.d(TAG, "releaseFocus sendModeMgrOffReq idx= " + idx + ", state = " + mode);
+                CountDownLatch latch = new CountDownLatch(1);
+                waitCondOff_ = latch;
+                try {
+                    int ret = modeMgrManager_.sendModeMgrOffReq(idx, mode);
+                    if (Log.isDebug()) Log.d(TAG, "releaseFocus sendModeMgrOffReq ret= " + ret);
 
-            if (Log.isDebug()) Log.d(TAG, "releaseFocus sendModeMgrOffReq idx= " + idx + ", state = " + mode);
-            ret = modeMgrManager_.sendModeMgrOffReq(idx, mode);
-            if (Log.isDebug()) Log.d(TAG, "releaseFocus sendModeMgrOffReq ret= " + ret);
-
-            if (Log.isDebug()) Log.d(TAG, "releaseFocus -> wait for cond");
-
-            waitCondOff_ = new CountDownLatch(1);
-            waitForCond(1000, waitCondOff_);
-            waitCondOff_ = null;
+                    if (Log.isDebug()) Log.d(TAG, "releaseFocus -> wait for cond");
+                    waitForCond(FOCUS_WAIT_TIMEOUT_MS, latch);
+                } finally {
+                    if (waitCondOff_ == latch) {
+                        waitCondOff_ = null;
+                    }
+                }
+            }
         }
     }
 
     public void increaseVolume(){
         if (Log.isDebug()) Log.d(TAG, "increaseVolume");
-        modeMgrManager_.reqModeMgrSteeringVolCmd(true);
+        if (modeMgrManager_ != null) {
+            modeMgrManager_.reqModeMgrSteeringVolCmd(true);
+        }
     }
 
     public void decreaseVolume(){
         if (Log.isDebug()) Log.d(TAG, "decreaseVolume");
-        modeMgrManager_.reqModeMgrSteeringVolCmd(false);
+        if (modeMgrManager_ != null) {
+            modeMgrManager_.reqModeMgrSteeringVolCmd(false);
+        }
     }
 
     // Used in onCreate
@@ -374,6 +552,7 @@ public class HondaConnectManager {
     // Used in onResume
     public void initAudioBinding(){
         if (Log.isDebug()) Log.d(TAG, "initAudioBinding -> app with auth " + authType());
+        inForeground_ = true;
         // if app has THIRD_PARTY auth will have exclusive audio focus, only bind wheel service
         if (isPreinstall()){
             if (Log.isDebug()) Log.d(TAG, "initAudioBinding -> app auth = preinstall -> register ModeMgr and SW callback");
@@ -387,10 +566,28 @@ public class HondaConnectManager {
                 registerSteeringMenuCallback();
                 registerModeMgrSWCallbacks();
                 notifySteeringMenuDispMode(1);
+            } else if (settings_.advanced.keepSourceOnScreen() || mediaPlaying_) {
+                // The head unit delivers the steering wheel keys to the
+                // current audio source, and resumes the radio at every start:
+                // the projection becomes the source as soon as it is on
+                // screen (see releaseAudioFocus), and always when its media
+                // is playing, for instance after coming back from another
+                // screen.
+                registerModeMgrSWCallbacks();
+                requestAudioFocus();
             } else {
                 requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
                 registerModeMgrSWCallbacks();
             }
+            // The head unit keeps the steering wheel keys for itself unless an
+            // app has registered with its steering menu service and announced
+            // its menu as shown; then they reach the app's window as key
+            // events. This used to happen only with the audio focus, so with
+            // the radio playing the wheel kept controlling the radio. hu15
+            // (github.com/omgmog/hu15), an Android Auto receiver for the same
+            // Honda units, does it whenever its projection is shown.
+            registerSteeringMenuCallback();
+            notifySteeringMenuDispMode(1);
         } else {
             // THIRD_PARTY
             if (Log.isDebug()) Log.d(TAG, "initAudioBinding -> using authType not PREINSTALL -> register SW callback and notify");
@@ -399,37 +596,184 @@ public class HondaConnectManager {
         }
     }
 
+    /**
+     * Hides the clock that the Honda status bar service draws over full-screen
+     * apps, while the projection is in front. In the car,
+     * StatusBarExManager.setFullScreenClockDisplay(false) returned 0 on every
+     * call (16 of them) and the clock stayed, so each attempt now makes three
+     * calls of the head unit framework (see setFullScreenClockDisplay()). The
+     * hide is re-applied when the window gains focus, when an audio source is
+     * announced and a few times after it was requested, and the outcome of
+     * each call is kept for the statistics overlay.
+     */
+    public void hideFullScreenClock(){
+        hideFullScreenClock_ = true;
+        mainHandler_.removeCallbacks(clockHideTask_);
+        mainHandler_.post(clockHideTask_);
+        for (long delay : CLOCK_HIDE_RETRY_MS) {
+            mainHandler_.postDelayed(clockHideTask_, delay);
+        }
+    }
+
+    /** Re-applies the hide after something may have redrawn the status bar. */
+    public void reapplyFullScreenClockHidden(){
+        if (!hideFullScreenClock_) {
+            return;
+        }
+        mainHandler_.removeCallbacks(clockHideTask_);
+        mainHandler_.post(clockHideTask_);
+        mainHandler_.postDelayed(clockHideTask_, CLOCK_HIDE_RETRY_MS[1]);
+    }
+
+    public void restoreFullScreenClock(){
+        if (!hideFullScreenClock_) {
+            return;
+        }
+        hideFullScreenClock_ = false;
+        mainHandler_.removeCallbacks(clockHideTask_);
+        runOnModeMgrExecutor(() -> setFullScreenClockDisplay(true));
+    }
+
+    /** Last outcome of the clock call, for the statistics overlay; null when never called. */
+    public String fullScreenClockStatus(){
+        return clockStatus_;
+    }
+
+    private final Runnable clockHideTask_ = () -> {
+        if (hideFullScreenClock_) {
+            // A binder call into the status bar service: keep it off the UI thread.
+            runOnModeMgrExecutor(() -> {
+                if (hideFullScreenClock_) {
+                    setFullScreenClockDisplay(false);
+                }
+            });
+        }
+    };
+
+    // Header text while the projection is in front (requestDraw below).
+    private static final String SB_HEADER_TEXT = "Android Auto";
+
+    private interface StatusBarCall {
+        int call();
+    }
+
+    /**
+     * The three ways the head unit framework offers, each reported on its own:
+     * - "set": setFullScreenClockDisplay(), the full-screen clock setting;
+     * - "notify": notifyClockDisplaySettingsChanged(), which by its name tells
+     *   the status bar to read the clock settings again (the setting alone
+     *   changed nothing);
+     * - "draw": requestDraw(), the header request of the screen in front, with
+     *   the flags that hide the time (FLAG_TIME_HIDE, FLAG_TIME_HIDE_FULL_SCREEN).
+     * Parameter names and constants come from the framework's stubs; what each
+     * call does on the head unit is not documented.
+     */
+    private void setFullScreenClockDisplay(boolean visible){
+        final String action = visible ? "show" : "hide";
+        final StatusBarExManager statusBar = statusBarExManager_;
+        if (statusBar == null) {
+            clockStatus_ = action + ": no status bar service";
+            if (Log.isWarn()) Log.w(TAG, "setFullScreenClockDisplay: no status bar service");
+            return;
+        }
+        final String set = statusBarCall("setFullScreenClockDisplay", () -> statusBar.setFullScreenClockDisplay(visible));
+        final String notify = statusBarCall("notifyClockDisplaySettingsChanged", statusBar::notifyClockDisplaySettingsChanged);
+        // The header layout and function icon of an authorised third-party
+        // app, which is what this app is to the head unit (PREINSTALL).
+        final int flags = visible ? StatusBarExConst.FLAG_NONE_HIDE
+                : StatusBarExConst.FLAG_TIME_HIDE | StatusBarExConst.FLAG_TIME_HIDE_FULL_SCREEN;
+        final String draw = statusBarCall("requestDraw",
+                () -> statusBar.requestDraw(StatusBarExConst.DA_LAYOUT_3RD_PARTY_AUTH, SB_HEADER_TEXT,
+                        StatusBarExConst.FUNCTION_ICON_ID_3RD_PARTY_AUTH, null, flags));
+        clockCalls_++;
+        clockStatus_ = action + " set " + set + " notify " + notify + " draw " + draw + " x" + clockCalls_;
+        if (Log.isInfo()) Log.i(TAG, "clock " + clockStatus_);
+    }
+
+    private static String statusBarCall(String name, StatusBarCall call) {
+        try {
+            return String.valueOf(call.call());
+        } catch (Throwable t) {
+            // NoSuchMethodError on firmware without the call, RuntimeException
+            // from a service that refuses it: either way keep the session going.
+            Log.w(TAG, name + " not available", t);
+            return t.getClass().getSimpleName();
+        }
+    }
+
     // Used in onPause (app in background)
     public void sendToBackground(){
         if (Log.isDebug()) Log.d(TAG, "sendToBackground -> app with auth " + authType() + " unregister SW callback");
+        inForeground_ = false;
         unregisterSteeringMenuCallback();
         unregisterModeMgrSWCallbacks();
         notifySteeringMenuDispMode(0);
+
+        // The source was kept only because the projection was on screen:
+        // give it back, so the head unit's previous source plays again, as it
+        // did when the media paused.
+        if (isPreinstall() && modeMgrManager_ != null && !mediaPlaying_ && settings_.advanced.keepSourceOnScreen()) {
+            runOnModeMgrExecutor(() -> {
+                if (!isRunning_ || inForeground_ || mediaPlaying_ || !hasAudioFocus_ || modeMgrManager_ == null) {
+                    return;
+                }
+                if (Log.isDebug()) Log.d(TAG, "sendToBackground -> release the source kept while on screen");
+                releaseFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
+            });
+        }
+    }
+
+    /**
+     * The player screen came to the front (true) or left it (false). Drives
+     * the return to the projection after a head unit interruption and the
+     * optional Bluetooth voice guard.
+     */
+    public void onPlayerVisible(boolean visible){
+        returnPolicy_.setEnabled(settings_.advanced.returnToProjection());
+        if (visible) {
+            returnPolicy_.onProjectionRunning(true);
+        }
+        returnPolicy_.onPlayerVisible(visible);
+        if (visible) {
+            registerBtVoiceReceiver();
+            runOnModeMgrExecutor(this::refreshHeadUnitState);
+        }
+        runOnModeMgrExecutor(() -> updateVoiceGuard(visible));
     }
 
     public void endAudioBinding(){
         if (Log.isDebug()) Log.d(TAG, "endAudioBinding -> app with auth " + authType());
 
-        stopMicSession();
+        inForeground_ = false;
+        isRunning_ = false;
+        mediaPlaying_ = false;
+        returnPolicy_.onProjectionRunning(false);
+        unregisterBtVoiceReceiver();
+        runOnModeMgrExecutor(() -> updateVoiceGuard(false));
+        stopMicSessionInternal();
 
         if (isPreinstall()){
             if (Log.isDebug()) Log.d(TAG, "endAudioBinding -> auth PREINSTALL -> release audio and unregister modemgr callback");
 
-            isRunning_ = false;
             int ret;
 
             if ( currentIdx_ != 255 ) {
                 releaseFocus(currentIdx_, currentModeState_);
             }
 
-            if (hasAudioFocus_){
-                notifySteeringMenuDispMode(0);
-            }
+            // Announced whenever the projection was in front, audio focus
+            // or not (initAudioBinding): withdrawn in any case, or the head
+            // unit could keep the wheel keys from its own sources.
+            notifySteeringMenuDispMode(0);
 
             unregisterModeMgrCallback();
             unregisterStateMgrCallback();
+            stopHeartbeat();
+            currentModeState_ = 0;
+            currentIdx_ = 255;
+            hasAudioFocus_ = false;
 
-            if (settings_.advanced.hondaImidEnabled()) {
+            if (settings_.advanced.hondaImidEnabled() && modeMgrManager_ != null) {
                 try {
                     if (Log.isDebug()) Log.d(TAG, "releaseFocus setImidConnectStatus 0");
                     ret = modeMgrManager_.setImidConnectStatus(0);
@@ -447,248 +791,280 @@ public class HondaConnectManager {
     }
 
     private void notifySteeringMenuDispMode(int mode){
-        if (Log.isDebug()) Log.d(TAG, "notifySteeringMenuDispMode -> boundToSteeringMenuService= " + boundToSteeringMenuService_);
-        if (boundToSteeringMenuService_ && steeringMenuServiceIface_ != null) {
-            try {
-                int idx = settings_.advanced.steeringWheelIdx();
-                if (idx > 0) {
-                    if (Log.isDebug()) Log.d(TAG, "notifySteeringMenuDispMode " + mode + " addr " + idx);
-                    steeringMenuServiceIface_.notifySteeringMenuDispMode(idx, mode);
+        synchronized (callbackLock_) {
+            if (Log.isDebug()) Log.d(TAG, "notifySteeringMenuDispMode -> boundToSteeringMenuService= " + boundToSteeringMenuService_);
+            if (boundToSteeringMenuService_ && steeringMenuServiceIface_ != null) {
+                try {
+                    int idx = settings_.advanced.steeringWheelIdx();
+                    if (idx > 0) {
+                        if (Log.isDebug()) Log.d(TAG, "notifySteeringMenuDispMode " + mode + " addr " + idx);
+                        steeringMenuServiceIface_.notifySteeringMenuDispMode(idx, mode);
+                    }
+                } catch (RemoteException e) {
+                    Log.e(TAG, "Error registering", e);
+                } catch (RuntimeException e) {
+                    Log.e(TAG, "Unexpected error notifySteeringMenuDispMode", e);
                 }
-            } catch (RemoteException e) {
-                Log.e(TAG, "Error registering", e);
-            } catch (RuntimeException e) {
-                Log.e(TAG, "Unexpected error notifySteeringMenuDispMode", e);
             }
         }
     }
 
     private void registerSteeringMenuCallback(){
-        if (Log.isDebug()) Log.d(TAG, "registerSteeringMenuCallback -> boundToSteeringMenuService= " + boundToSteeringMenuService_ + ", steeringMenuServiceCallback= " + (steeringMenuServiceCallback_ == null ? "null" : "not null"));
-        try {
-            if (boundToSteeringMenuService_ && steeringMenuServiceCallback_ == null) {
-                int idx = settings_.advanced.steeringWheelIdx();
-                if (Log.isDebug()) Log.d(TAG, "registerCallbackEx swaddr " + idx);
-                steeringMenuServiceCallback_ = new SteeringMenuServiceCallback();
-                steeringMenuServiceIface_.registerCallbackEx(steeringMenuServiceCallback_, idx);
+        synchronized (callbackLock_) {
+            if (Log.isDebug()) Log.d(TAG, "registerSteeringMenuCallback -> boundToSteeringMenuService= " + boundToSteeringMenuService_ + ", steeringMenuServiceCallback= " + (steeringMenuServiceCallback_ == null ? "null" : "not null"));
+            try {
+                if (boundToSteeringMenuService_ && steeringMenuServiceCallback_ == null) {
+                    int idx = settings_.advanced.steeringWheelIdx();
+                    if (Log.isDebug()) Log.d(TAG, "registerCallbackEx swaddr " + idx);
+                    steeringMenuServiceCallback_ = new SteeringMenuServiceCallback();
+                    steeringMenuServiceIface_.registerCallbackEx(steeringMenuServiceCallback_, idx);
+                }
+            } catch (RemoteException e) {
+                Log.e(TAG, "Error registerCallbackEx", e);
+                steeringMenuServiceCallback_ = null;
+            } catch (RuntimeException e) {
+                Log.e(TAG, "Unexpected error registerCallbackEx", e);
+                steeringMenuServiceCallback_ = null;
             }
-        } catch (RemoteException e) {
-            Log.e(TAG, "Error registerCallbackEx", e);
-            steeringMenuServiceCallback_ = null;
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Unexpected error registerCallbackEx", e);
-            steeringMenuServiceCallback_ = null;
         }
     }
 
     private void registerModeMgrSWCallbacks(){
-        if (Log.isDebug()) Log.d(TAG, "registerModeMgrSWCallbacks modeMgrServiceSWSmartPhoneCallBack= " + (modeMgrServiceSWSmartPhoneCallBack_ == null ? "null" : "not null"));
-        if (modeMgrServiceSWSmartPhoneCallBack_ == null){
-            modeMgrServiceSWSmartPhoneCallBack_ = new ModeMgrServiceSWSmartPhoneCallBack();
-            int ret = modeMgrManager_.registerModeMgrSWSmartPhoneCallback(settings_.advanced.modeMgrAudioVideoIdx(), modeMgrServiceSWSmartPhoneCallBack_);
-            if (Log.isDebug()) Log.d(TAG, "registerModeMgrSWSmartPhoneCallback ret= " + ret);
-        }
+        synchronized (callbackLock_) {
+            if (modeMgrManager_ == null) {
+                return;
+            }
+            if (Log.isDebug()) Log.d(TAG, "registerModeMgrSWCallbacks modeMgrServiceSWSmartPhoneCallBack= " + (modeMgrServiceSWSmartPhoneCallBack_ == null ? "null" : "not null"));
+            if (modeMgrServiceSWSmartPhoneCallBack_ == null){
+                modeMgrServiceSWSmartPhoneCallBack_ = new ModeMgrServiceSWSmartPhoneCallBack();
+                int ret = modeMgrManager_.registerModeMgrSWSmartPhoneCallback(settings_.advanced.modeMgrAudioVideoIdx(), modeMgrServiceSWSmartPhoneCallBack_);
+                if (Log.isDebug()) Log.d(TAG, "registerModeMgrSWSmartPhoneCallback ret= " + ret);
+            }
 
-        if (Log.isDebug()) Log.d(TAG, "registerModeMgrSWCallbacks modeMgrServiceSWKeyEventCallBack= " + (modeMgrServiceSWKeyEventCallBack_ == null ? "null" : "not null"));
-        if (modeMgrServiceSWKeyEventCallBack_ == null){
-            modeMgrServiceSWKeyEventCallBack_ = new ModeMgrServiceSWKeyEventCallBack();
-            int ret = modeMgrManager_.registerModeMgrSWKeyEventCallback(settings_.advanced.modeMgrAudioVideoIdx(), modeMgrServiceSWKeyEventCallBack_);
-            if (Log.isDebug()) Log.d(TAG, "registerModeMgrSWKeyEventCallback ret= " + ret);
-        }
+            if (Log.isDebug()) Log.d(TAG, "registerModeMgrSWCallbacks modeMgrServiceSWKeyEventCallBack= " + (modeMgrServiceSWKeyEventCallBack_ == null ? "null" : "not null"));
+            if (modeMgrServiceSWKeyEventCallBack_ == null){
+                modeMgrServiceSWKeyEventCallBack_ = new ModeMgrServiceSWKeyEventCallBack();
+                int ret = modeMgrManager_.registerModeMgrSWKeyEventCallback(settings_.advanced.modeMgrAudioVideoIdx(), modeMgrServiceSWKeyEventCallBack_);
+                if (Log.isDebug()) Log.d(TAG, "registerModeMgrSWKeyEventCallback ret= " + ret);
+            }
 
-        if (Log.isDebug()) Log.d(TAG, "registerModeMgrInspectionCallback modeMgrInspectionCallBack= " + (modeMgrInspectionCallBack_ == null ? "null" : "not null"));
-        if (modeMgrInspectionCallBack_ == null){
-            modeMgrInspectionCallBack_ = new ModeMgrInspectionCallBack();
-            int ret = modeMgrManager_.registerModeMgrInspectionCallback(modeMgrInspectionCallBack_);
-            if (Log.isDebug()) Log.d(TAG, "registerModeMgrInspectionCallback ret= " + ret);
+            if (Log.isDebug()) Log.d(TAG, "registerModeMgrInspectionCallback modeMgrInspectionCallBack= " + (modeMgrInspectionCallBack_ == null ? "null" : "not null"));
+            if (modeMgrInspectionCallBack_ == null){
+                modeMgrInspectionCallBack_ = new ModeMgrInspectionCallBack();
+                int ret = modeMgrManager_.registerModeMgrInspectionCallback(modeMgrInspectionCallBack_);
+                if (Log.isDebug()) Log.d(TAG, "registerModeMgrInspectionCallback ret= " + ret);
+            }
         }
     }
 
     private void unregisterModeMgrSWCallbacks(){
-        if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrSWCallbacks modeMgrServiceSWSmartPhoneCallBack= " + (modeMgrServiceSWSmartPhoneCallBack_ == null ? "null" : "not null"));
-        if (modeMgrServiceSWSmartPhoneCallBack_ != null){
-            int ret = modeMgrManager_.unregisterModeMgrSWSmartPhoneCallback(settings_.advanced.modeMgrAudioVideoIdx());
-            if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrSWSmartPhoneCallback ret= " + ret);
-            modeMgrServiceSWSmartPhoneCallBack_ = null;
-        }
+        synchronized (callbackLock_) {
+            if (modeMgrManager_ == null) {
+                return;
+            }
+            if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrSWCallbacks modeMgrServiceSWSmartPhoneCallBack= " + (modeMgrServiceSWSmartPhoneCallBack_ == null ? "null" : "not null"));
+            if (modeMgrServiceSWSmartPhoneCallBack_ != null){
+                int ret = modeMgrManager_.unregisterModeMgrSWSmartPhoneCallback(settings_.advanced.modeMgrAudioVideoIdx());
+                if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrSWSmartPhoneCallback ret= " + ret);
+                modeMgrServiceSWSmartPhoneCallBack_ = null;
+            }
 
-        if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrSWCallbacks modeMgrServiceSWKeyEventCallBack= " + (modeMgrServiceSWKeyEventCallBack_ == null ? "null" : "not null"));
-        if (modeMgrServiceSWKeyEventCallBack_ != null){
-            int ret = modeMgrManager_.unregisterModeMgrSWKeyEventCallback(settings_.advanced.modeMgrAudioVideoIdx());
-            if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrSWKeyEventCallback ret= " + ret);
-            modeMgrServiceSWKeyEventCallBack_ = null;
-        }
+            if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrSWCallbacks modeMgrServiceSWKeyEventCallBack= " + (modeMgrServiceSWKeyEventCallBack_ == null ? "null" : "not null"));
+            if (modeMgrServiceSWKeyEventCallBack_ != null){
+                int ret = modeMgrManager_.unregisterModeMgrSWKeyEventCallback(settings_.advanced.modeMgrAudioVideoIdx());
+                if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrSWKeyEventCallback ret= " + ret);
+                modeMgrServiceSWKeyEventCallBack_ = null;
+            }
 
-        if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrInspectionCallback modeMgrInspectionCallBack= " + (modeMgrInspectionCallBack_ == null ? "null" : "not null"));
-        if (modeMgrInspectionCallBack_ != null){
-            int ret = modeMgrManager_.unregisterModeMgrInspectionCallback();
-            if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrInspectionCallback ret= " + ret);
-            modeMgrInspectionCallBack_ = null;
+            if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrInspectionCallback modeMgrInspectionCallBack= " + (modeMgrInspectionCallBack_ == null ? "null" : "not null"));
+            if (modeMgrInspectionCallBack_ != null){
+                int ret = modeMgrManager_.unregisterModeMgrInspectionCallback();
+                if (Log.isDebug()) Log.d(TAG, "unregisterModeMgrInspectionCallback ret= " + ret);
+                modeMgrInspectionCallBack_ = null;
+            }
         }
     }
 
     private void unregisterSteeringMenuCallback(){
-        if (Log.isDebug()) Log.d(TAG, "unregisterSteeringMenuCallback -> boundToSteeringMenuService= " + boundToSteeringMenuService_ + ", steeringMenuServiceCallback= " + (steeringMenuServiceCallback_ == null ? "null" : "not null"));
-        try {
-            if (boundToSteeringMenuService_ && steeringMenuServiceCallback_ != null) {
-                int idx = settings_.advanced.steeringWheelIdx();
-                if (Log.isDebug()) Log.d(TAG, "unregisterCallbackEx swaddr " + idx);
-                steeringMenuServiceIface_.unregisterCallbackEx(steeringMenuServiceCallback_, idx);
+        synchronized (callbackLock_) {
+            if (Log.isDebug()) Log.d(TAG, "unregisterSteeringMenuCallback -> boundToSteeringMenuService= " + boundToSteeringMenuService_ + ", steeringMenuServiceCallback= " + (steeringMenuServiceCallback_ == null ? "null" : "not null"));
+            try {
+                if (boundToSteeringMenuService_ && steeringMenuServiceCallback_ != null) {
+                    int idx = settings_.advanced.steeringWheelIdx();
+                    if (Log.isDebug()) Log.d(TAG, "unregisterCallbackEx swaddr " + idx);
+                    steeringMenuServiceIface_.unregisterCallbackEx(steeringMenuServiceCallback_, idx);
+                    steeringMenuServiceCallback_ = null;
+                }
+            } catch (RemoteException e) {
+                Log.e(TAG, "Error unregisterCallbackEx", e);
+                steeringMenuServiceCallback_ = null;
+            } catch (RuntimeException e) {
+                Log.e(TAG, "Unexpected error unregisterCallbackEx", e);
                 steeringMenuServiceCallback_ = null;
             }
-        } catch (RemoteException e) {
-            Log.e(TAG, "Error unregisterCallbackEx", e);
-            steeringMenuServiceCallback_ = null;
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Unexpected error unregisterCallbackEx", e);
-            steeringMenuServiceCallback_ = null;
         }
     }
 
     public void startMicSession() {
-        if (Log.isDebug()) Log.d(TAG, "starting MicSession -> hasAudioFocus= " + hasAudioFocus_);
-        if (!settings_.advanced.hondaMicVrEnabled()){
-            if (Log.isDebug()) Log.d(TAG, "mic disabled");
-            return;
-        }
+        runOnModeMgrExecutor(this::startMicSessionInternal);
+    }
 
-        if (micVrStarted_) {
-            if (Log.isWarn()) Log.w(TAG, "mic session already started");
-            return;
-        }
+    private void startMicSessionInternal() {
+        synchronized (micLock_) {
+            if (Log.isDebug()) Log.d(TAG, "starting MicSession -> hasAudioFocus= " + hasAudioFocus_);
+            if (!settings_.advanced.hondaMicVrEnabled() || !isRunning_){
+                if (Log.isDebug()) Log.d(TAG, "mic disabled or session stopped");
+                return;
+            }
 
-        int ret = -1;
-        if (settings_.advanced.useBtMicVr()) {
-            if (bluetoothVR_ != null) {
-                if (isPreinstall() && !hasAudioFocus_) {
-                    if (Log.isDebug()) Log.d(TAG, "startMicSession hasAudioFocus_ false -> request audio focus");
-                    requestFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_BOTH);
-                    hasAudioFocusForMic_ = true;
-                }
+            if (micVrStarted_) {
+                if (Log.isWarn()) Log.w(TAG, "mic session already started");
+                return;
+            }
 
-                if (Log.isDebug()) Log.d(TAG, "bluetoothVR -> getVoiceControlRights");
-                ret = bluetoothVR_.getVoiceControlRights(bluetoothVrListener_);
-                if (Log.isDebug()) Log.d(TAG, "bluetoothVR -> getVoiceControlRights ret = " + ret);
-                if (ret == 0){
-                    btVoiceControlRights_ = true;
-                } else {
-                    if (Log.isWarn()) Log.w(TAG, "btVoiceControlRights= false");
-                    btVoiceControlRights_ = false;
-                    if (Log.isDebug()) {
-                        Log.d(TAG, "Error in get Voice Control Rights");
-                        printToast("Error in get Voice Control Rights");
+            int ret = -1;
+            if (settings_.advanced.useBtMicVr()) {
+                if (bluetoothVR_ != null) {
+                    if (isPreinstall() && !hasAudioFocus_) {
+                        if (Log.isDebug()) Log.d(TAG, "startMicSession hasAudioFocus_ false -> request audio focus");
+                        requestFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_BOTH);
+                        hasAudioFocusForMic_ = true;
                     }
-                    return;
-                }
+                    if (!isRunning_) {
+                        return;
+                    }
 
-                if (Log.isDebug()) Log.d(TAG, "requestVoiceRecognitionActivation START");
-                ret = bluetoothVR_.requestVoiceRecognitionActivation(BluetoothVrListener.REQUEST_VBRA_START); // invia AT+BVRA=1
-                if (Log.isDebug()) Log.d(TAG, "requestVoiceRecognitionActivation START ret=" + ret);
-                if (ret == 0){
-                    micVrStarted_ = true;
+                    if (Log.isDebug()) Log.d(TAG, "bluetoothVR -> getVoiceControlRights");
+                    ret = bluetoothVR_.getVoiceControlRights(bluetoothVrListener_);
+                    if (Log.isDebug()) Log.d(TAG, "bluetoothVR -> getVoiceControlRights ret = " + ret);
+                    if (ret == 0){
+                        btVoiceControlRights_ = true;
+                    } else {
+                        if (Log.isWarn()) Log.w(TAG, "btVoiceControlRights= false");
+                        btVoiceControlRights_ = false;
+                        if (Log.isDebug()) {
+                            Log.d(TAG, "Error in get Voice Control Rights");
+                            printToast("Error in get Voice Control Rights");
+                        }
+                        return;
+                    }
+
+                    if (Log.isDebug()) Log.d(TAG, "requestVoiceRecognitionActivation START");
+                    ret = bluetoothVR_.requestVoiceRecognitionActivation(BluetoothVrListener.REQUEST_VBRA_START); // invia AT+BVRA=1
+                    if (Log.isDebug()) Log.d(TAG, "requestVoiceRecognitionActivation START ret=" + ret);
+                    if (ret == 0){
+                        micVrStarted_ = true;
+                    } else {
+                        if (Log.isWarn()) Log.w(TAG, "micVrStarted= false");
+                        micVrStarted_ = false;
+                        if (Log.isDebug()) {
+                            Log.d(TAG, "Error in activating VR");
+                            printToast("Error in activating VR");
+                        }
+                        return;
+                    }
                 } else {
-                    if (Log.isWarn()) Log.w(TAG, "micVrStarted= false");
+                    if (Log.isWarn()) Log.w(TAG, "bluetoothVR_ null");
                     micVrStarted_ = false;
-                    if (Log.isDebug()) {
-                        Log.d(TAG, "Error in activating VR");
-                        printToast("Error in activating VR");
-                    }
-                    return;
-                }
-
-                if (ret == 0) {
-                    micVrStarted_ = true;
                 }
             } else {
-                if (Log.isWarn()) Log.w(TAG, "bluetoothVR_ null");
-                micVrStarted_ = false;
-            }
-        } else {
-            try {
-                if (isPreinstall() && !hasAudioFocus_) {
-                    if (Log.isDebug()) Log.d(TAG, "startMicSession hasAudioFocus_ false -> request audio focus");
-                    requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_BOTH);
-                    hasAudioFocusForMic_ = true;
-                }
+                try {
+                    if (isPreinstall() && !hasAudioFocus_) {
+                        if (Log.isDebug()) Log.d(TAG, "startMicSession hasAudioFocus_ false -> request audio focus");
+                        requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_BOTH);
+                        hasAudioFocusForMic_ = true;
+                    }
+                    if (!isRunning_) {
+                        return;
+                    }
 
-                ret = EcNcServiceNative.startVR(true, true);
-                if (Log.isDebug()) {
-                    Log.d(TAG, "ecNcServiceIface_ startVR ret= " + ret);
-                    printToast("ecNcServiceIface_ startVR ret= " + ret);
-                }
+                    ret = EcNcServiceNative.startVR(true, true);
+                    if (Log.isDebug()) {
+                        Log.d(TAG, "ecNcServiceIface_ startVR ret= " + ret);
+                        printToast("ecNcServiceIface_ startVR ret= " + ret);
+                    }
 
-                if (ret == 0) {
-                    micVrStarted_ = true;
+                    if (ret == 0) {
+                        micVrStarted_ = true;
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "startVR exception", e);
+                    micVrStarted_ = false;
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "startVR exception", e);
-                micVrStarted_ = false;
             }
         }
-
     }
 
     public void stopMicSession() {
-        if (Log.isDebug()) Log.d(TAG, "stopping MicSession -> hasAudioFocus= " + hasAudioFocus_);
-        if (!settings_.advanced.hondaMicVrEnabled()){
-            if (Log.isDebug()) Log.d(TAG, "mic disabled");
-            return;
-        }
+        runOnModeMgrExecutor(this::stopMicSessionInternal);
+    }
 
-        int ret = -1;
-        if (settings_.advanced.useBtMicVr()) {
-            if (bluetoothVR_ != null) {
-                if (Log.isDebug()) Log.d(TAG, "stopMicSession micVrStarted_= " + micVrStarted_ + " btVoiceControlRights_= " + btVoiceControlRights_);
+    private void stopMicSessionInternal() {
+        synchronized (micLock_) {
+            if (Log.isDebug()) Log.d(TAG, "stopping MicSession -> hasAudioFocus= " + hasAudioFocus_);
+            if (!settings_.advanced.hondaMicVrEnabled()){
+                if (Log.isDebug()) Log.d(TAG, "mic disabled");
+                return;
+            }
+
+            int ret = -1;
+            if (settings_.advanced.useBtMicVr()) {
+                if (bluetoothVR_ != null) {
+                    if (Log.isDebug()) Log.d(TAG, "stopMicSession micVrStarted_= " + micVrStarted_ + " btVoiceControlRights_= " + btVoiceControlRights_);
+                    if (micVrStarted_) {
+                        if (Log.isDebug()) Log.d(TAG, "stopMicSession -> requestVoiceRecognitionActivation STOP");
+                        ret = bluetoothVR_.requestVoiceRecognitionActivation(BluetoothVrListener.REQUEST_VBRA_STOP); // invia AT+BVRA=1
+                        if (Log.isDebug()) Log.d(TAG, "stopMicSession -> requestVoiceRecognitionActivation STOP ret=" + ret);
+                        micVrStarted_ = false;
+                    }
+
+                    if (btVoiceControlRights_) {
+                        if (Log.isDebug()) Log.d(TAG, "stopMicSession -> releaseVoiceControlRights");
+                        ret = bluetoothVR_.releaseVoiceControlRights(bluetoothVrListener_);
+                        if (Log.isDebug()) Log.d(TAG, "stopMicSession -> releaseVoiceControlRights ret = " + ret);
+                        btVoiceControlRights_ = false;
+                    }
+
+                    if (isPreinstall() && hasAudioFocusForMic_ && isRunning_) {
+                        if (Log.isDebug()) Log.d(TAG, "stopMicSession hasAudioFocusForMic_ true -> release audio focus");
+                        releaseFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
+                        if (isRunning_) {
+                            requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
+                        }
+                    }
+
+                    hasAudioFocusForMic_ = false;
+
+                } else {
+                    if (Log.isWarn()) Log.w(TAG, "stopMicSession bluetoothVR_ null");
+                }
+            } else {
                 if (micVrStarted_) {
-                    if (Log.isDebug()) Log.d(TAG, "stopMicSession -> requestVoiceRecognitionActivation STOP");
-                    ret = bluetoothVR_.requestVoiceRecognitionActivation(BluetoothVrListener.REQUEST_VBRA_STOP); // invia AT+BVRA=1
-                    if (Log.isDebug()) Log.d(TAG, "stopMicSession -> requestVoiceRecognitionActivation STOP ret=" + ret);
+                    try {
+                        ret = EcNcServiceNative.endVr(true);
+                        if (Log.isDebug()) {
+                            Log.d(TAG, "ecNcServiceIface_ endVr ret= " + ret);
+                            printToast("ecNcServiceIface_ endVr ret= " + ret);
+                        }
+
+                        ret = EcNcServiceNative.driverClose();
+                        if (Log.isDebug()) {
+                            Log.d(TAG, "ecNcServiceIface_ driverClose ret= " + ret);
+                            printToast("ecNcServiceIface_ driverClose ret= " + ret);
+                        }
+
+                    } catch (Exception e) {
+                        Log.e(TAG, "startVR exception", e);
+                    }
                     micVrStarted_ = false;
                 }
 
-                if (btVoiceControlRights_) {
-                    if (Log.isDebug()) Log.d(TAG, "stopMicSession -> releaseVoiceControlRights");
-                    ret = bluetoothVR_.releaseVoiceControlRights(bluetoothVrListener_);
-                    if (Log.isDebug()) Log.d(TAG, "stopMicSession -> releaseVoiceControlRights ret = " + ret);
-                    btVoiceControlRights_ = false;
-                }
-
-                if (isPreinstall() && hasAudioFocusForMic_ ) {
+                if (isPreinstall() && hasAudioFocusForMic_ && isRunning_) {
                     if (Log.isDebug()) Log.d(TAG, "stopMicSession hasAudioFocusForMic_ true -> release audio focus");
-                    releaseFocus(settings_.advanced.modeMgrAudioVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
-                    requestFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_VIDEO);
+                    releaseFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
                 }
-
                 hasAudioFocusForMic_ = false;
-
-            } else {
-                if (Log.isWarn()) Log.w(TAG, "stopMicSession bluetoothVR_ null");
             }
-        } else {
-            try {
-                ret = EcNcServiceNative.endVr(true);
-                if (Log.isDebug()) {
-                    Log.d(TAG, "ecNcServiceIface_ endVr ret= " + ret);
-                    printToast("ecNcServiceIface_ endVr ret= " + ret);
-                }
-
-                ret = EcNcServiceNative.driverClose();
-                if (Log.isDebug()) {
-                    Log.d(TAG, "ecNcServiceIface_ driverClose ret= " + ret);
-                    printToast("ecNcServiceIface_ driverClose ret= " + ret);
-                }
-
-            } catch (Exception e) {
-                Log.e(TAG, "startVR exception", e);
-                micVrStarted_ = false;
-            }
-
-            if (isPreinstall() && hasAudioFocusForMic_) {
-                if (Log.isDebug()) Log.d(TAG, "stopMicSession hasAudioFocusForMic_ true -> release audio focus");
-                releaseFocus(settings_.advanced.modeMgrVideoIdx(), ModeMgrMode.REQUEST_AUDIO);
-            }
-            hasAudioFocusForMic_ = false;
-            micVrStarted_ = false;
         }
     }
 
@@ -731,17 +1107,21 @@ public class HondaConnectManager {
     private void registerModeMgrCallback(){
         if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback");
         if (modeMgrManager_ != null) {
-            int idx = settings_.advanced.modeMgrAudioVideoIdx();
-            if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback idx " + idx);
-            modeMgrServiceAudioVideoCallBack_ = new ModeMgrServiceVideoAudioCallBack();
-            int ret = modeMgrManager_.registerModeMgrCallback(idx, modeMgrServiceAudioVideoCallBack_);
-            if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback ret " + ret);
+            if (modeMgrServiceAudioVideoCallBack_ == null) {
+                int idx = settings_.advanced.modeMgrAudioVideoIdx();
+                if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback idx " + idx);
+                modeMgrServiceAudioVideoCallBack_ = new ModeMgrServiceVideoAudioCallBack();
+                int ret = modeMgrManager_.registerModeMgrCallback(idx, modeMgrServiceAudioVideoCallBack_);
+                if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback ret " + ret);
+            }
 
-            idx = settings_.advanced.modeMgrVideoIdx();
-            if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback idx " + idx);
-            modeMgrServiceVideoCallBack_ = new ModeMgrServiceVideoCallBack();
-            ret = modeMgrManager_.registerModeMgrCallback(idx, modeMgrServiceVideoCallBack_);
-            if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback ret " + ret);
+            if (modeMgrServiceVideoCallBack_ == null) {
+                int idx = settings_.advanced.modeMgrVideoIdx();
+                if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback idx " + idx);
+                modeMgrServiceVideoCallBack_ = new ModeMgrServiceVideoCallBack();
+                int ret = modeMgrManager_.registerModeMgrCallback(idx, modeMgrServiceVideoCallBack_);
+                if (Log.isDebug()) Log.d(TAG, "registerModeMgrCallback ret " + ret);
+            }
         } else {
             Log.w(TAG, "modeMgrManager_ null -> do nothing");
         }
@@ -758,10 +1138,12 @@ public class HondaConnectManager {
     private void registerStateMgrCallback() {
         if (Log.isDebug()) Log.d(TAG, "registerStateMgrCallback");
         if (stateMgrManager_ != null){
-            StateMgrChangeInfo changeInfo = createStateMgrChangeInfo();
-            stateMgrServiceCallBack_ = new StateMgrServiceCallBack();
-            int ret = stateMgrManager_.registCallBack(stateMgrServiceCallBack_, changeInfo);
-            if (Log.isDebug()) Log.d(TAG, "registerStateMgrCallback ret " + ret);
+            if (stateMgrServiceCallBack_ == null) {
+                StateMgrChangeInfo changeInfo = createStateMgrChangeInfo();
+                stateMgrServiceCallBack_ = new StateMgrServiceCallBack();
+                int ret = stateMgrManager_.registCallBack(stateMgrServiceCallBack_, changeInfo);
+                if (Log.isDebug()) Log.d(TAG, "registerStateMgrCallback ret " + ret);
+            }
         } else {
             Log.w(TAG, "stateMgrManager_ null -> do nothing");
         }
@@ -783,8 +1165,8 @@ public class HondaConnectManager {
         StateMgrChangeInfo changeInfo = new StateMgrChangeInfo();
         changeInfo.audioAddressC = true;
         changeInfo.dayNightStateC = true;
-        changeInfo.rdsInterruptC = false;
-        changeInfo.rdsAlarmInterruptC = false;
+        changeInfo.rdsInterruptC = true;
+        changeInfo.rdsAlarmInterruptC = true;
         changeInfo.videoAddressC = true;
         changeInfo.functionInfoC = false;
         changeInfo.openingScreenC = false;
@@ -799,7 +1181,7 @@ public class HondaConnectManager {
         changeInfo.steeringPopUpC = false;
         changeInfo.audioLauncherC = false;
         changeInfo.iMidC = false;
-        changeInfo.hftPopupC = false;
+        changeInfo.hftPopupC = true;
         changeInfo.screenOffC = true;
         changeInfo.usbPopupC = false;
         changeInfo.parkingSensorC = false;
@@ -811,7 +1193,9 @@ public class HondaConnectManager {
         changeInfo.videoResumeCompletedC = false;
         changeInfo.lastAudioAddressC = false;
         changeInfo.audioResumeCompletedC = false;
-        changeInfo.hftStateC = false;
+        changeInfo.hftStateC = true;
+        changeInfo.siriStateC = true;
+        changeInfo.voiceTagStateC = true;
         changeInfo.steeringDispKeyC = false;
         changeInfo.headerInterruptC = false;
 
@@ -866,38 +1250,42 @@ public class HondaConnectManager {
     }
 
     private void startHeartbeat() {
-        if (Log.isDebug()) Log.d(TAG, "startHeartbeat currentModeState_ " + currentModeState_);
+        synchronized (heartbeatLock_) {
+            if (Log.isDebug()) Log.d(TAG, "startHeartbeat currentModeState_ " + currentModeState_);
 
-        if (currentModeState_ == 0) {
-            if (Log.isDebug()) Log.d(TAG, "startHeartbeat currentState 0 -> stop heartbeat");
-            stopHeartbeat();
-            return;
+            if (!isRunning_ || currentModeState_ == 0) {
+                if (Log.isDebug()) Log.d(TAG, "startHeartbeat currentState 0 or stopped -> stop heartbeat");
+                stopHeartbeat();
+                return;
+            }
+
+            heartbeat();
+
+            if (heartbeatExecutor_ != null){
+                if (Log.isDebug()) Log.d(TAG, "startHeartbeat heartbeat already running -> do nothing");
+                return;
+            }
+
+            heartbeatExecutor_ = Executors.newSingleThreadScheduledExecutor();
+
+            heartbeatFuture_ = heartbeatExecutor_.scheduleWithFixedDelay(this::heartbeat, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
         }
-
-        heartbeat();
-
-        if (heartbeatExecutor_ != null){
-            if (Log.isDebug()) Log.d(TAG, "startHeartbeat heartbeat already running -> do nothing");
-            return;
-        }
-
-        heartbeatExecutor_ = Executors.newSingleThreadScheduledExecutor();
-
-        heartbeatFuture_ = heartbeatExecutor_.scheduleWithFixedDelay(this::heartbeat, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     private void stopHeartbeat() {
-        if (Log.isDebug()) Log.d(TAG, "stopHeartbeat currentModeState_ " + currentModeState_);
+        synchronized (heartbeatLock_) {
+            if (Log.isDebug()) Log.d(TAG, "stopHeartbeat currentModeState_ " + currentModeState_);
 
-        if (heartbeatFuture_ != null) {
-            if (Log.isDebug()) Log.d(TAG, "stopHeartbeat cancel future");
-            heartbeatFuture_.cancel(false);
-            heartbeatFuture_ = null;
-        }
-        if (heartbeatExecutor_ != null) {
-            if (Log.isDebug()) Log.d(TAG, "stopHeartbeat shutdown executor");
-            heartbeatExecutor_.shutdownNow();
-            heartbeatExecutor_ = null;
+            if (heartbeatFuture_ != null) {
+                if (Log.isDebug()) Log.d(TAG, "stopHeartbeat cancel future");
+                heartbeatFuture_.cancel(false);
+                heartbeatFuture_ = null;
+            }
+            if (heartbeatExecutor_ != null) {
+                if (Log.isDebug()) Log.d(TAG, "stopHeartbeat shutdown executor");
+                heartbeatExecutor_.shutdownNow();
+                heartbeatExecutor_ = null;
+            }
         }
     }
 
@@ -1001,6 +1389,328 @@ public class HondaConnectManager {
         });
     }
 
+    // ---- Steering wheel keys
+
+    /**
+     * A steering wheel key that reached the projection's window as a key
+     * event (how the head unit delivers them once the steering menu is
+     * announced). It goes through the same router as the callbacks, so a press
+     * that also arrives on a callback is sent once. Returns the outcome.
+     */
+    public SteeringKeyRouter.Result onWindowSteeringKey(int keyCode, int repeatCount) {
+        return onSteeringKey(SteeringKeyRouter.Source.WINDOW, keyCode, repeatCount);
+    }
+
+    private SteeringKeyRouter.Result onSteeringKey(SteeringKeyRouter.Source source, int first, int second) {
+        final SteeringKeyRouter.Result result = steeringKeys_.onKey(source, first, second);
+        keyEvents_.add(result.toString());
+        if (Log.isInfo()) Log.i(TAG, "steering key " + result);
+        return result;
+    }
+
+    /** Injects a key into this app's window, which is how the key map screen learns keys. */
+    private boolean injectKey(int keyCode) {
+        if (!inForeground_) {
+            // The focused window belongs to another app: it must not get it.
+            return false;
+        }
+        try {
+            new Instrumentation().sendKeyDownUpSync(keyCode);
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "could not inject key " + keyCode, e);
+            return false;
+        }
+    }
+
+    // ---- Head unit state, the return to the projection and the overlay
+
+    private void refreshHeadUnitState() {
+        if (stateMgrManager_ == null) {
+            return;
+        }
+        try {
+            StateMgrInfo info = stateMgrManager_.getAllState();
+            if (info != null) {
+                onHeadUnitState(info, null);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "could not read the head unit state", e);
+        }
+    }
+
+    /** A state manager report; changed == null takes every field (a full read). */
+    private void onHeadUnitState(StateMgrInfo info, StateMgrChangeInfo changed) {
+        synchronized (headUnitLock_) {
+            if (changed == null || changed.siriStateC) siriState_ = noteState("siri", siriState_, info.siriState);
+            if (changed == null || changed.voiceTagStateC) voiceTagState_ = noteState("voice", voiceTagState_, info.voiceTagState);
+            if (changed == null || changed.hftStateC) hftState_ = noteState("call", hftState_, info.hftState);
+            if (changed == null || changed.hftPopupC) hftPopup_ = noteState("popup", hftPopup_, info.hftPopup);
+            if (changed == null || changed.videoAddressC) videoAddress_ = noteState("v", videoAddress_, info.videoAddress);
+            if (changed == null || changed.audioAddressC) audioAddress_ = noteState("a", audioAddress_, info.audioAddress);
+            if (changed == null || changed.rdsInterruptC) rdsInterrupt_ = noteState("ta", rdsInterrupt_, info.rdsInterrupt);
+            if (changed == null || changed.rdsAlarmInterruptC) rdsAlarmInterrupt_ = noteState("alarm", rdsAlarmInterrupt_, info.rdsAlarmInterrupt);
+
+            returnPolicy_.onHeadUnitState(
+                    siriState_ == StateMgrServiceConst.STATE_SIRI_ON,
+                    voiceTagState_ == StateMgrServiceConst.STATE_VOICETAG_ON,
+                    hftState_ > 0 || hftPopup_ > 0,
+                    videoAddress_);
+
+            final boolean interrupted = audioInterruptedLocked();
+            if (interrupted) {
+                mainHandler_.removeCallbacks(reclaimSourceTask_);
+            } else if (audioInterrupted_) {
+                reclaimAttempts_ = 0;
+                mainHandler_.removeCallbacks(reclaimSourceTask_);
+                mainHandler_.postDelayed(reclaimSourceTask_, SOURCE_RECLAIM_DELAY_MS);
+            }
+            audioInterrupted_ = interrupted;
+        }
+    }
+
+    /** Something of the head unit's own has the audio for now: Siri, voice commands, a call, a traffic announcement. */
+    private boolean audioInterruptedLocked() {
+        return siriState_ == StateMgrServiceConst.STATE_SIRI_ON
+                || voiceTagState_ == StateMgrServiceConst.STATE_VOICETAG_ON
+                || hftState_ > 0 || hftPopup_ > 0
+                || rdsInterrupt_ > 0 || rdsAlarmInterrupt_ > 0;
+    }
+
+    private final Runnable reclaimSourceTask_ = () -> runOnModeMgrExecutor(this::reclaimSource);
+
+    /**
+     * After an interruption the head unit hands the audio back to the radio,
+     * not to the projection. Take it back while the projection is on screen
+     * and should be the source (its media plays, or "keep the source" is on).
+     */
+    private void reclaimSource() {
+        if (!isPreinstall() || modeMgrManager_ == null || !isRunning_ || !inForeground_ || hasAudioFocus_) {
+            return;
+        }
+        if (!mediaPlaying_ && !settings_.advanced.keepSourceOnScreen()) {
+            return;
+        }
+        synchronized (headUnitLock_) {
+            if (audioInterruptedLocked() || reclaimAttempts_ >= SOURCE_RECLAIM_ATTEMPTS) {
+                return;
+            }
+            reclaimAttempts_++;
+            reclaims_++;
+        }
+        headUnitEvents_.add("src back");
+        if (Log.isInfo()) Log.i(TAG, "taking the audio source back after an interruption");
+        requestAudioFocus();
+        mainHandler_.postDelayed(reclaimSourceTask_, SOURCE_RECLAIM_RECHECK_MS);
+    }
+
+    private int noteState(String name, int previous, int value) {
+        // Changes only: the first read is the starting point, not an event.
+        if (previous != -1 && previous != value) {
+            headUnitEvents_.add(name + " " + value);
+            if (Log.isInfo()) Log.i(TAG, "head unit " + name + " " + previous + " -> " + value);
+        }
+        return value;
+    }
+
+    private void bringProjectionToFront(String cause) {
+        if (!isRunning_) {
+            return;
+        }
+        headUnitEvents_.add("back to AA (" + cause + ")");
+        if (Log.isInfo()) Log.i(TAG, "bringing the projection back after " + cause);
+        try {
+            Intent i = new Intent(context_, PlayerActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            context_.startActivity(i);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "could not bring the projection back", e);
+        }
+    }
+
+    /**
+     * Three lines for the statistics overlay: the head unit state and what
+     * this app does with it, the last steering wheel keys (newest first, with
+     * the callback they came on and where they went), the last head unit
+     * events.
+     */
+    public String steeringStatus() {
+        final StringBuilder text = new StringBuilder("hu ");
+        final int reclaims;
+        synchronized (headUnitLock_) {
+            text.append('a').append(audioAddress_).append(" v").append(videoAddress_);
+            if (siriState_ == StateMgrServiceConst.STATE_SIRI_ON) text.append(" siri");
+            if (voiceTagState_ == StateMgrServiceConst.STATE_VOICETAG_ON) text.append(" voice");
+            if (hftState_ > 0) text.append(" call").append(hftState_);
+            if (hftPopup_ > 0) text.append(" popup");
+            if (rdsInterrupt_ > 0 || rdsAlarmInterrupt_ > 0) text.append(" ta");
+            reclaims = reclaims_;
+        }
+        text.append(" | src ").append(hasAudioFocus_ ? "AA" : "-");
+        if (reclaims > 0) {
+            text.append(" back x").append(reclaims);
+        }
+        text.append(" | media ").append(mediaPlaying_ ? "on" : "off");
+        text.append(" | keys ").append(modeMgrServiceSWKeyEventCallBack_ != null ? "on" : "off");
+        text.append(" | return ").append(returnPolicy_.describe());
+        text.append(" | mic ").append(!settings_.advanced.hondaMicVrEnabled() ? "off"
+                : settings_.advanced.useBtMicVr() ? "bt" : "ecnc");
+        text.append(" | bt-guard ").append(voiceGuardStatus_);
+        final String keys = keyEvents_.joined();
+        text.append("\nhu-keys ").append(keys.isEmpty() ? "-" : keys);
+        final String events = headUnitEvents_.joined();
+        text.append("\nhu-evt ").append(events.isEmpty() ? "-" : events);
+        return text.toString();
+    }
+
+    // ---- Bluetooth voice: what the head unit does, and the optional guard
+
+    // From the head unit framework: SiriAtCommandListener.ACTION_SIRI_STATUS,
+    // EXTRA_SIRI_STATUS, SIRI_ACTIVE, SIRI_NOT_ACTIVE; BluetoothVr
+    // .ACTION_BVRA_START, API_OK.
+    private static final String ACTION_SIRI_STATUS = "com.fujitsu_ten.displayaudio.bluetooth.handsfree.action.SIRI_STATUS";
+    private static final String EXTRA_SIRI_STATUS = "com.fujitsu_ten.displayaudio.bluetooth.handsfree.extra.SIRI_STATUS";
+    private static final int SIRI_ACTIVE = 1;
+    private static final int SIRI_NOT_ACTIVE = 2;
+    private static final String ACTION_BVRA_START = "com.fujitsu_ten.displayaudio.bluetooth.vr.action.ACTION_BVRA_START";
+    private static final int BT_VR_API_OK = 0;
+
+    /** Notes when the head unit reports Siri over Bluetooth or a voice recognition start. Diagnostics only. */
+    private void registerBtVoiceReceiver() {
+        synchronized (btVoiceReceiverLock_) {
+            if (btVoiceReceiver_ != null) {
+                return;
+            }
+            final BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    final String event;
+                    if (ACTION_SIRI_STATUS.equals(intent.getAction())) {
+                        final int status = intent.getIntExtra(EXTRA_SIRI_STATUS, -1);
+                        event = "bt-siri " + (status == SIRI_ACTIVE ? "on" : status == SIRI_NOT_ACTIVE ? "off" : String.valueOf(status));
+                    } else {
+                        event = "bvra";
+                    }
+                    headUnitEvents_.add(event);
+                    if (Log.isInfo()) Log.i(TAG, "bluetooth voice: " + event);
+                }
+            };
+            final IntentFilter filter = new IntentFilter();
+            filter.addAction(ACTION_SIRI_STATUS);
+            filter.addAction(ACTION_BVRA_START);
+            try {
+                context_.registerReceiver(receiver, filter);
+                btVoiceReceiver_ = receiver;
+            } catch (RuntimeException e) {
+                Log.w(TAG, "could not listen for the Bluetooth voice status", e);
+            }
+        }
+    }
+
+    private void unregisterBtVoiceReceiver() {
+        synchronized (btVoiceReceiverLock_) {
+            if (btVoiceReceiver_ == null) {
+                return;
+            }
+            try {
+                context_.unregisterReceiver(btVoiceReceiver_);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Bluetooth voice receiver was not registered", e);
+            }
+            btVoiceReceiver_ = null;
+        }
+    }
+
+    /**
+     * Advanced > Honda, experimental and off by default: while the projection
+     * is on screen, hold the Bluetooth voice control rights, in case the head
+     * unit needs them to start Siri over Bluetooth hands-free when it handles
+     * Talk itself. Not used with the Bluetooth microphone, which needs the
+     * rights for its own voice session. Runs on the mode manager thread.
+     */
+    private void updateVoiceGuard(boolean visible) {
+        final boolean enabled = settings_.advanced.blockHondaBtVoice();
+        final boolean btMic = settings_.advanced.useBtMicVr();
+        final boolean wanted = visible && isRunning_ && enabled && !btMic;
+        synchronized (micLock_) {
+            if (wanted == voiceRightsHeld_) {
+                if (!wanted) {
+                    voiceGuardStatus_ = !enabled ? "off" : btMic ? "off: bt mic" : "idle";
+                }
+                return;
+            }
+            try {
+                final BluetoothVr vr = BluetoothVr.getInstance();
+                if (vr == null) {
+                    voiceGuardStatus_ = "no bt vr";
+                    return;
+                }
+                if (voiceGuardListener_ == null) {
+                    voiceGuardListener_ = new VoiceGuardListener();
+                }
+                if (wanted) {
+                    final int ret = vr.getVoiceControlRights(voiceGuardListener_);
+                    voiceRightsHeld_ = ret == BT_VR_API_OK;
+                    voiceGuardStatus_ = (voiceRightsHeld_ ? "holding" : "refused") + " ret " + ret;
+                } else {
+                    final int ret = vr.releaseVoiceControlRights(voiceGuardListener_);
+                    voiceRightsHeld_ = false;
+                    voiceGuardStatus_ = "released ret " + ret;
+                }
+            } catch (Throwable t) {
+                // Firmware without the call, or a service that refuses it.
+                voiceRightsHeld_ = false;
+                voiceGuardStatus_ = "failed: " + t.getClass().getSimpleName();
+                Log.w(TAG, "Bluetooth voice guard", t);
+            }
+            headUnitEvents_.add("bt-guard " + voiceGuardStatus_);
+            if (Log.isInfo()) Log.i(TAG, "Bluetooth voice guard: " + voiceGuardStatus_);
+        }
+    }
+
+    private final class VoiceGuardListener implements BluetoothVrListener {
+
+        @Override
+        public void onErrorOccurred(int type, int code) {
+            note("error " + type + "/" + code);
+        }
+
+        @Override
+        public void onRequestSamplingRateChange(int rate) {
+            // Whoever holds the rights confirms the change, or the audio link
+            // waits for it.
+            try {
+                BluetoothVr vr = BluetoothVr.getInstance();
+                if (vr != null) {
+                    vr.completeSamplingRateChange(rate);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "completeSamplingRateChange", t);
+            }
+            note("rate " + rate);
+        }
+
+        @Override
+        public void onScoChanged(int scoStatus, int samplingRate) {
+            note("sco " + scoStatus);
+        }
+
+        @Override
+        public void onVoiceControlRightsNotification(int value) {
+            note("rights " + value);
+        }
+
+        @Override
+        public void onVoiceControlRightsResponse(int value) {
+            note("rights resp " + value);
+        }
+
+        private void note(String event) {
+            headUnitEvents_.add("bt-guard " + event);
+            if (Log.isInfo()) Log.i(TAG, "Bluetooth voice guard: " + event);
+        }
+    }
+
     private class ModeMgrServiceSWKeyEventCallBack extends IModeMgrServiceSWKeyEventCallBack.Stub {
 
         private static final String TAG = "HondaConnectManager-ModeMgrServiceSWKeyEventCallBack";
@@ -1008,8 +1718,7 @@ public class HondaConnectManager {
         @Override
         public void rcvStrgKeyEvent(int i, int i1) throws RemoteException {
             if (Log.isDebug()) Log.d(TAG, "rcvStrgKeyEvent  " + i + "/" + i1);
-            Instrumentation instrumentation = new Instrumentation();
-            instrumentation.sendKeyDownUpSync(i);
+            onSteeringKey(SteeringKeyRouter.Source.KEY_EVENT, i, i1);
         }
     };
 
@@ -1020,8 +1729,7 @@ public class HondaConnectManager {
         @Override
         public void rcvKeyInspecCmd(int i, int i1) throws RemoteException {
             if (Log.isDebug()) Log.d(TAG, "rcvKeyInspecCmd  " + i + "/" + i1);
-            Instrumentation instrumentation = new Instrumentation();
-            instrumentation.sendKeyDownUpSync(i);
+            onSteeringKey(SteeringKeyRouter.Source.INSPECTION, i, i1);
         }
     }
 
@@ -1031,8 +1739,7 @@ public class HondaConnectManager {
         @Override
         public void rcvStrgKeyCmd(int i) throws RemoteException {
             if (Log.isDebug()) Log.d(TAG, "rcvStrgKeyCmd  " + i);
-            Instrumentation instrumentation = new Instrumentation();
-            instrumentation.sendKeyDownUpSync(i);
+            onSteeringKey(SteeringKeyRouter.Source.PHONE, i, 0);
         }
     };
 
@@ -1053,16 +1760,9 @@ public class HondaConnectManager {
 
         public boolean onSteeringSWDown(int keytype) {
             if (Log.isDebug()) Log.d(TAG, "onSteeringSWDown " + keytype);
-//            if (Log.isVerbose()){
-//                mainHandler_.post(() -> {
-//                    Toast.makeText(context_, "onSteeringSWDown keytype= " + keytype, Toast.LENGTH_SHORT).show();
-//                });
-//            }
-
-            Instrumentation instrumentation = new Instrumentation();
-            instrumentation.sendKeyDownUpSync(keytype);
-
-            return true;
+            // True tells the steering menu service the key was used; keys
+            // Android Auto has no use for stay with the head unit.
+            return onSteeringKey(SteeringKeyRouter.Source.STEERING_MENU, keytype, 0).consumed();
         }
     };
 
@@ -1077,48 +1777,10 @@ public class HondaConnectManager {
 
             dumpStateMgr(info);
 
-            if (changed.videoAddressC){
-                if (Log.isDebug()) Log.d(TAG, "videoAddress=" + info.videoAddress);
-                if (Log.isDebug()) Log.d(TAG, "lastVideoAddress=" + info.lastVideoAddress);
-
-                if (info.videoAddress == 92 && isRunning_) {
-                    if (Log.isDebug()) {
-                        Log.d(TAG, "activating rear camera -> restore activity after");
-                        printToast("videoAddress " + info.videoAddress + " -> activating rear camera");
-                    }
-
-                    restoreActivity_ = true;
-
-                } else if (info.videoAddress == 120 && isRunning_ && restoreActivity_) { // check info.videoResumeCompleted ?
-                    if (Log.isDebug()) {
-                        Log.d(TAG, "coming from reverse camera -> restore activity");
-                        printToast( "videoAddress " + info.videoAddress + " -> restore activity");
-                    }
-
-                    mainHandler_.postDelayed(() -> {
-                        if (Log.isDebug()) {
-                            Toast.makeText(context_, "restoring PlayerActivity", Toast.LENGTH_SHORT).show();
-                        }
-
-                        Intent i = new Intent(context_, PlayerActivity.class);
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        context_.startActivity(i);
-                    }, 500);
-
-                    restoreActivity_ = false;
-
-                } else if (info.videoAddress == 198 && isRunning_){
-                    mainHandler_.postDelayed(() -> {
-                        if (Log.isDebug()) {
-                            Toast.makeText(context_, "restoring PlayerActivity", Toast.LENGTH_SHORT).show();
-                        }
-
-                        Intent i = new Intent(context_, PlayerActivity.class);
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        context_.startActivity(i);
-                    }, 500);
-
-                }
+            if (changed.videoAddressC || changed.audioAddressC || changed.siriStateC
+                    || changed.voiceTagStateC || changed.hftStateC || changed.hftPopupC
+                    || changed.rdsInterruptC || changed.rdsAlarmInterruptC) {
+                onHeadUnitState(info, changed);
             }
 
             if (changed.dayNightStateC) {
@@ -1166,9 +1828,10 @@ public class HondaConnectManager {
 
             startHeartbeat();
 
-            if (waitCondOn_ != null) {
+            CountDownLatch onLatch = waitCondOn_;
+            if (onLatch != null) {
                 if (Log.isDebug()) Log.d(TAG, "rcvOnInsCmd notify waitCondOn");
-                waitCondOn_.countDown();
+                onLatch.countDown();
             }
 
         }
@@ -1202,14 +1865,19 @@ public class HondaConnectManager {
                 startHeartbeat();
             }
 
-            if (waitCondOff_ != null) {
+            CountDownLatch offLatch = waitCondOff_;
+            if (offLatch != null) {
                 if (Log.isDebug()) Log.d(TAG, "rcvOffInsCmd notify waitCondOff");
-                waitCondOff_.countDown();
+                offLatch.countDown();
             }
         }
 
         public void rcvOnReqCmdFailed(int audioaddr, int videoaddr, int reason) throws RemoteException {
             if (Log.isDebug()) Log.d(TAG, "rcvOnReqCmdFailed audioaddr = " + audioaddr + " , videoaddr = " + videoaddr + " , reason = " + reason);
+            CountDownLatch onLatch = waitCondOn_;
+            if (onLatch != null) {
+                onLatch.countDown();
+            }
         }
 
         public void rcvVideoPwrCmd(int addr) throws RemoteException {
@@ -1267,9 +1935,10 @@ public class HondaConnectManager {
 
             startHeartbeat();
 
-            if (waitCondOn_ != null) {
+            CountDownLatch onLatch = waitCondOn_;
+            if (onLatch != null) {
                 if (Log.isDebug()) Log.d(TAG, "rcvOnInsCmd notify waitCondOn");
-                waitCondOn_.countDown();
+                onLatch.countDown();
             }
 
         }
@@ -1306,14 +1975,19 @@ public class HondaConnectManager {
                 startHeartbeat();
             }
 
-            if (waitCondOff_ != null) {
+            CountDownLatch offLatch = waitCondOff_;
+            if (offLatch != null) {
                 if (Log.isDebug()) Log.d(TAG, "rcvOffInsCmd notify waitCondOff");
-                waitCondOff_.countDown();
+                offLatch.countDown();
             }
         }
 
         public void rcvOnReqCmdFailed(int audioaddr, int videoaddr, int reason) {
             if (Log.isDebug()) Log.d(TAG, "rcvOnReqCmdFailed audioaddr = " + audioaddr + " , videoaddr = " + videoaddr + " , reason = " + reason);
+            CountDownLatch onLatch = waitCondOn_;
+            if (onLatch != null) {
+                onLatch.countDown();
+            }
         }
 
         public void rcvVideoPwrCmd(int addr) {

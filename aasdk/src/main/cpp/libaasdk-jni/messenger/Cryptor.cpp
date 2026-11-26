@@ -174,28 +174,45 @@ size_t Cryptor::decrypt(common::Data& output, const common::DataConstBuffer& buf
 {
     std::lock_guard<decltype(mutex_)> lock(mutex_);
 
+    if (buffer.size == 0) {
+        return 0;
+    }
+
     this->write(buffer);
     const size_t beginOffset = output.size();
-    output.resize(beginOffset + 1);
-
-    size_t availableBytes = 1;
+    size_t availableBytes = 0;
     size_t totalReadSize = 0;
 
-    while(availableBytes > 0)
+    while(true)
     {
+        // Ask for a whole record at once: plaintext is never larger than the
+        // ciphertext just written, so one SSL_read usually drains it (it used
+        // to start with a one-byte read and copy the rest in a second call).
+        const size_t nextChunkSize = availableBytes > 0
+                ? availableBytes
+                : std::max<size_t>(buffer.size, 4096);
+        output.resize(beginOffset + totalReadSize + nextChunkSize);
         const auto& currentBuffer = common::DataBuffer(output, totalReadSize + beginOffset);
         auto readSize = sslWrapper_->sslRead(ssl_, currentBuffer.data, currentBuffer.size);
 
         if(readSize <= 0)
         {
-            throw error::Error(error::ErrorCode::SSL_READ, sslWrapper_->getError(ssl_, readSize));
+            int sslError = sslWrapper_->getError(ssl_, readSize);
+            if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE) {
+                break;
+            }
+            output.resize(beginOffset + totalReadSize);
+            throw error::Error(error::ErrorCode::SSL_READ, sslError);
         }
 
         totalReadSize += readSize;
         availableBytes = sslWrapper_->getAvailableBytes(ssl_);
-        output.resize(output.size() + availableBytes);
+        if (availableBytes == 0 && sslWrapper_->bioCtrlPending(bIOs_.first) == 0) {
+            break;
+        }
     }
 
+    output.resize(beginOffset + totalReadSize);
     return totalReadSize;
 }
 

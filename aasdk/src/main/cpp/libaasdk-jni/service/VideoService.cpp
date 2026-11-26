@@ -71,7 +71,11 @@ void VideoService::onAVChannelSetupRequest(const aasdk::proto::messages::AVChann
 
     aasdk::proto::messages::AVChannelSetupResponse response;
     response.set_media_status(status);
-    response.set_max_unacked(1);
+    // Frames are acknowledged as soon as they are queued for the decoder, so
+    // this never throttles the phone; it only lets it send the next frame
+    // without waiting for the previous acknowledgement to come back over USB
+    // (same value as josepabulo/OpenDroidAuto).
+    response.set_max_unacked(5);
     response.add_configs(0);
 
     auto promise = aasdk::channel::SendPromise::defer(strand_, "VideoService_sendVideoFocus");
@@ -166,6 +170,32 @@ void VideoService::onVideoFocusRequest(const aasdk::proto::messages::VideoFocusR
         this->sendVideoFocusReleaseIndication();
     }
 //    channel_->receive(this->shared_from_this());
+}
+
+void VideoService::releaseFocus()
+{
+    if (!isRunning_ || !strand_) {
+        return;
+    }
+    strand_->dispatch([this, self = this->shared_from_this()]() {
+        if (!isRunning_) {
+            return;
+        }
+        this->sendVideoFocusReleaseIndication();
+    });
+}
+
+void VideoService::gainFocus()
+{
+    if (!isRunning_ || !strand_) {
+        return;
+    }
+    strand_->dispatch([this, self = this->shared_from_this()]() {
+        if (!isRunning_) {
+            return;
+        }
+        this->sendVideoFocusIndication();
+    });
 }
 
 void VideoService::sendVideoFocusIndication()

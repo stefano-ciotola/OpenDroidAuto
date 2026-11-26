@@ -59,16 +59,20 @@ void JVideoOutput::stop() {
     env->CallVoidMethod(androidClass_, stopMethodId_);
 }
 
+// Java returns the frame rate itself, 30 or 60. Phones read the field as
+// 1 = 60 fps and 2 = 30 fps, as hu15 (github.com/omgmog/hu15) and the
+// hirneagabriel fork measured on the same Honda units: aasdk's names for the
+// two values are the other way round. This used to compare the frame rate
+// with the enum values and always sent 1, so every setting asked for 60 fps.
 aasdk::proto::enums::VideoFPS::Enum JVideoOutput::getVideoFPS() {
     JNIEnv* env = getJniEnv();
-    jint ret = env->CallIntMethod(androidClass_, getVideoFPSMethodId_);
-    //TODO: try to cast
-    switch (ret) {
-        case aasdk::proto::enums::VideoFPS_Enum__60:
-            return aasdk::proto::enums::VideoFPS_Enum__60;
-        default:
-            return aasdk::proto::enums::VideoFPS_Enum__30;
-    }
+    const jint fps = env->CallIntMethod(androidClass_, getVideoFPSMethodId_);
+    const aasdk::proto::enums::VideoFPS::Enum field = fps == 60
+            ? aasdk::proto::enums::VideoFPS_Enum__30   // value 1: 60 fps
+            : aasdk::proto::enums::VideoFPS_Enum__60;  // value 2: 30 fps
+    if (Log::isInfo()) Log_i("video config: %d fps requested (field value %d)", fps == 60 ? 60 : 30,
+                             static_cast<int>(field));
+    return field;
 }
 
 aasdk::proto::enums::VideoResolution::Enum JVideoOutput::getVideoResolution() {

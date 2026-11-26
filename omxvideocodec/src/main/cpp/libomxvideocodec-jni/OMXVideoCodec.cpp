@@ -1,7 +1,12 @@
 #include "OMXVideoCodec.h"
+#include "H264NalParser.h"
+#include "SpsPatcher.h"
+#include "VideoStats.h"
 #include <Log.h>
 
 #include <unistd.h>
+#include <sys/prctl.h>
+#include <sys/resource.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 #include <cinttypes>
@@ -9,12 +14,21 @@
 #include <sstream>
 #include <iomanip>
 
+namespace {
+
+// ANDROID_PRIORITY_URGENT_DISPLAY: the decoder thread waits most of the time,
+// but when a frame is ready it should not queue behind ordinary app threads.
+constexpr int kDecoderThreadPriority = -8;
+
+} // namespace
+
 OMXVideoCodec::OMXVideoCodec()
     : omxSource_(nullptr)
     , omxDecoder_(nullptr)
     , fps_(0)
     , decoderThreadInitialized_(false)
-    , decoderThreadQuitFlag_(false){
+    , decoderThreadQuitFlag_(false)
+    , statsStarted_(false){
 }
 
 OMXVideoCodec::~OMXVideoCodec() {
@@ -25,11 +39,19 @@ OMXVideoCodec::~OMXVideoCodec() {
     omxDecoder_ = nullptr;
 
     omxSource_ = nullptr;
+    sourceRef_.clear();
 }
 
-status_t OMXVideoCodec::init(int fps){
+status_t OMXVideoCodec::init(int fps, const DecoderOptions& options){
     fps_ = fps;
+    options_ = options;
     if (Log::isInfo()) Log_i("FPS %d", fps_);
+
+    if (options_.stats) {
+        VideoStats::instance().start();
+        statsStarted_ = true;
+    }
+
     // Create decoder thread and wait until ready
     if (Log::isInfo()) Log_i("start omxDecoderThread");
 
@@ -64,29 +86,58 @@ void OMXVideoCodec::shutdown(){
         ANativeWindow_release(nativeWindow_.get());
     }
 
+    if (statsStarted_) {
+        VideoStats::instance().stop();
+        statsStarted_ = false;
+    }
+
     if (Log::isInfo()) Log_i("all done");
 }
 
 void OMXVideoCodec::init_omxDecoderThread() {
+    prctl(PR_SET_NAME, "ODA-OMXDecoder", 0, 0, 0);
     if (Log::isInfo()) Log_i("omxDecoderThread begins");
+    if (setpriority(PRIO_PROCESS, gettid(), kDecoderThreadPriority) != 0 && Log::isInfo()) {
+        Log_i("could not raise the decoder thread priority");
+    }
 
-    omxSource_ = new OMXSource(screenSize_.width, screenSize_.height, fps_);
+    omxSource_ = new OMXSource(screenSize_.width, screenSize_.height, fps_, options_.legacyDrop,
+                               options_.idlePush);
+    sourceRef_ = omxSource_;
 
     if (Log::isDebug()) Log_d("Created OMXSource %p", omxSource_);
 
     omxDecoder_ = new OMXDecoder();
     omxDecoder_->setNativeWindow(nativeWindow_);
     omxDecoder_->setSource(omxSource_);
-    omxDecoder_->init();
+    const status_t initStatus = omxDecoder_->init(options_);
+
+    std::string summary = omxDecoder_->summary();
+    summary += std::string(" | legacy-drop ") + (options_.legacyDrop ? "on" : "off");
+    summary += std::string(" | sps-patch ") + (options_.spsLowLatency ? (options_.spsLevel31 ? "on+level" : "on") : "off");
+    summary += std::string(" | push ") + (options_.idlePush ? "on" : "off");
+    summary += " | fps req " + std::to_string(fps_);
+    if (Log::isInfo()) Log_i("decoder options: %s", summary.c_str());
+    VideoStats::instance().setDecoderSummary(summary);
 
     std::unique_lock<std::mutex> codeclock(codecMutex_);
     decoderThreadInitialized_ = true;
     codeclock.unlock();
     omxDecoderCond_.notify_one();
 
-    while (!decoderThreadQuitFlag_) {
+    if (initStatus != OK) {
+        // Nothing to drive: calling read() on a decoder that never started only
+        // spins on an error. Frames keep being dropped by OMXSource's limits.
+        Log_e("decoder init failed (%d), no video will be shown", initStatus);
+    }
+
+    while (initStatus == OK && !decoderThreadQuitFlag_) {
         status_t ret = omxDecoder_->read();
         if (Log::isVerbose()) Log_v("omxDecoder_ read ret = %d", ret);
+        if (ret != OK && ret != INFO_FORMAT_CHANGED && ret != TIMED_OUT) {
+            // A codec in its error state answers immediately: do not burn a core.
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
     }
 
     if (Log::isInfo()) Log_i("omxDecoderThread ends");
@@ -95,7 +146,7 @@ void OMXVideoCodec::init_omxDecoderThread() {
     omxDecoder_->stop();
 }
 
-void OMXVideoCodec::setNativeWindow(ANativeWindow* nativeWindow, int height, int width){
+void OMXVideoCodec::setNativeWindow(ANativeWindow* nativeWindow, int width, int height){
     if (Log::isDebug()) Log_d("set native window size w: %d, h: %d", width, height);
     nativeWindow_ = nativeWindow;
     screenSize_.width = width;
@@ -121,12 +172,46 @@ void OMXVideoCodec::queueBuffer(common::DataConstBuffer& buffer, int64_t timesta
         return;
     }
 
-    auto* mBuffer = new MediaBuffer(buffer.size);
+    VideoStats::instance().onReceived(buffer.size, timestamp);
+
+    const auto* data = static_cast<const uint8_t*>(buffer.cdata);
+    std::size_t size = buffer.size;
+    // Parameter sets come once per session (and with some encoders before
+    // every keyframe), so the rewrite costs nothing on ordinary frames.
+    std::vector<uint8_t> patched;
+    if (h264::inspectNalUnits(data, size).hasSps && rewriteSps(data, size, &patched)) {
+        data = patched.data();
+        size = patched.size();
+    }
+
+    auto* mBuffer = new MediaBuffer(size);
     if (Log::isVerbose()) Log_v("create buffer %p", mBuffer);
-    memcpy(mBuffer->data(), buffer.cdata, buffer.size);
-    mBuffer->set_range(0, (size_t) buffer.size);
+    memcpy(mBuffer->data(), data, size);
+    mBuffer->set_range(0, size);
     mBuffer->meta_data()->clear();
     mBuffer->meta_data()->setInt64(kKeyTime, timestamp);
 
     source()->queueBuffer(mBuffer);
+}
+
+bool OMXVideoCodec::rewriteSps(const uint8_t* data, std::size_t size, std::vector<uint8_t>* patched) {
+    bool sawSps = false;
+    h264::SpsInfo info;
+    h264::SpsPatch result = h264::SpsPatch::Invalid;
+    const int minLevel = options_.spsLevel31 ? 31 : 0;
+    const bool changed = h264::patchAccessUnit(data, size, patched, &sawSps, &info, &result, minLevel);
+    if (!sawSps) {
+        return false;
+    }
+
+    std::string summary = "SPS ";
+    summary += result == h264::SpsPatch::Invalid ? "unreadable" : h264::describeSps(info);
+    summary += " | ";
+    summary += options_.spsLowLatency ? h264::describePatch(result, minLevel) : "patch off";
+    if (summary != streamSummary_) {
+        streamSummary_ = summary;
+        if (Log::isInfo()) Log_i("%s", summary.c_str());
+        VideoStats::instance().setStreamSummary(summary);
+    }
+    return options_.spsLowLatency && changed;
 }

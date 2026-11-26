@@ -2,6 +2,9 @@
 #include <JNIBase.h>
 #include <Log.h>
 #include <jni.h>
+#include <sys/prctl.h>
+#include <sys/resource.h>
+#include <unistd.h>
 
 namespace aasdk {
 namespace usb {
@@ -26,6 +29,12 @@ void LibUsb::initWorker(){
         // Attach jni thread
         JNIEnv* env;
         JNIBase::javaAttachThread("LibUsb Worker", &env);
+        prctl(PR_SET_NAME, "ODA-LibUsb", 0, 0, 0);
+        // Completes the USB transfers that carry the video: same priority as
+        // the IO threads (ANDROID_PRIORITY_URGENT_DISPLAY).
+        if (setpriority(PRIO_PROCESS, gettid(), -8) != 0 && Log::isInfo()) {
+            Log_i("ODA-LibUsb: could not raise thread priority");
+        }
 
         timeval libusbEventTimeout{1, 0};
         int completed = 0;

@@ -2,6 +2,17 @@
 #include <google/protobuf/stubs/common.h>
 #include "it_smg_libs_aasdk_Runtime.h"
 #include "Backtrace.h"
+#include <string>
+#include <sys/prctl.h>
+#include <sys/resource.h>
+#include <unistd.h>
+
+namespace {
+// ANDROID_PRIORITY_URGENT_DISPLAY. Every video and audio message passes
+// through these threads; they mostly wait, but should not queue behind
+// ordinary app threads when data arrives.
+constexpr int kIoThreadPriority = -8;
+}
 
 jfieldID JRuntime::handleId = nullptr;
 JRuntime::Pointer JRuntime::instance_ = nullptr;
@@ -79,10 +90,17 @@ void JRuntime::startIOServiceWorkers(int threads) {
 
     work_ = std::make_unique<boost::asio::io_service::work>(ioService_);
 
-    auto ioServiceWorker = [this]() {
+    auto ioServiceWorker = [this](int index) {
         // Attach jni thread
         JNIEnv* env;
         JNIBase::javaAttachThread("IOService Worker", &env);
+        // Distinct kernel names, so per-thread CPU (top, video statistics)
+        // shows which worker is busy.
+        const std::string name = "ODA-IO-" + std::to_string(index);
+        prctl(PR_SET_NAME, name.c_str(), 0, 0, 0);
+        if (setpriority(PRIO_PROCESS, gettid(), kIoThreadPriority) != 0 && Log::isInfo()) {
+            Log_i("%s: could not raise thread priority", name.c_str());
+        }
 
         {
             std::unique_lock<std::mutex> lock(m);
@@ -111,7 +129,7 @@ void JRuntime::startIOServiceWorkers(int threads) {
     if(Log::isInfo()) Log_i("Starting %d threads", threads);
 
     for (int w = 1; w <= threads; w++) {
-        threadPool_.emplace_back(ioServiceWorker);
+        threadPool_.emplace_back(ioServiceWorker, w);
     }
 
     std::unique_lock<std::mutex> lock(m);

@@ -1,11 +1,12 @@
 <resources>
 	<string name="app_name">OpenDroidAuto</string>
+	<string name="app_label" translatable="false">ODA Fork</string>
 	<string name="home_subtitle">Android Auto for legacy head units</string>
 	<string name="home_connection_status">Connection status</string>
 	<string name="home_status_waiting">WAITING</string>
 	<string name="home_status_ready">READY</string>
 	<string name="home_waiting_title">Connect your phone</string>
-	<string name="home_waiting_detail">The Start button appears when USB or Wi-Fi is ready.</string>
+	<string name="home_waiting_detail">Use the USB cable. The start button will appear on the right.</string>
 	<string name="home_ready_title">Ready to start</string>
 	<string name="home_ready_detail">USB is prepared. Press Start to open Android Auto.</string>
 	<string name="home_usb_waiting">USB waiting</string>
@@ -36,6 +37,7 @@
 	<string name="home_usb_ready">USB ready</string>
 	<string name="home_wifi_waiting">Wi-Fi waiting</string>
 	<string name="home_wifi_ready">Wi-Fi: %1$s</string>
+	<string name="home_wifi_listening">Wi-Fi: %1$s (%2$s:%3$d)</string>
 	<string name="theme_light">THEME: LIGHT</string>
 	<string name="theme_dark">THEME: DARK</string>
 	<string name="connection_usb_detected">USB device detected</string>
@@ -57,6 +59,7 @@
 	<string name="connection_wifi_gateway_error">Phone hotspot gateway is not ready</string>
 	<string name="connection_wifi_active">Android Auto connected through Wi-Fi</string>
 	<string name="connection_wifi_endpoint_error">Wi-Fi endpoint unreachable at %1$s:5277</string>
+	<string name="connection_wifi_incoming_error">Incoming Wi-Fi connection failed at %1$s</string>
 	<string name="connection_session_ended">Android Auto session ended</string>
 	<string name="connection_mode_missing">No connection mode was provided</string>
 	<string name="connection_user_stopped">Android Auto stopped. Press Start to connect again.</string>
@@ -72,9 +75,12 @@
 	<string name="car_settings_sw_build">SW Build</string>
 	<string name="car_settings_sw_version">SW Version</string>
 	<string name="car_settings_play_media_during_vr">Play Native Media During VR</string>
-	<string name="car_settings_hide_clock">Hide Clock</string>
+	<string name="car_settings_hide_clock">Hide the Android Auto clock</string>
+	<string name="car_settings_hide_hu_clock">Hide the head unit clock during Android Auto (Honda Connect)</string>
 	<string name="car_settings_left_drive">Left Drive</string>
 	<string name="car_settings_aa_wifi">Use Android Auto Wireless</string>
+	<string name="app_language">App language</string>
+	<string name="app_language_system">System language</string>
 
 	<string name="video_settings_sw_dec">Use software decoder (can be slow)</string>
 	<string name="video_settings">Video Settings</string>
@@ -82,11 +88,26 @@
 	<string name="video_settings_fps">FPS</string>
 	<string name="video_settings_dpi">DPI</string>
 	<string name="video_settings_margin">Margin</string>
+	<string name="video_settings_margin_error">Wrong margin format, it must be x,y</string>
 	<string name="video_settings_nightmode">Night Mode</string>
+	<string name="video_settings_light_sensor_missing">Light sensor not available, switching to TIME/GPS</string>
 	<string name="audio_settings_micsource">Mic Source</string>
 	<string name="video_show_media_notification">Show Media notification when app is in background</string>
 	<string name="video_show_navigation_notification">Show Navigation notification when app is in background</string>
 	<string name="video_show_app_badge">Show an application badge when app is in background</string>
+	<string name="video_settings_experimental">Diagnostics and experimental decoder options</string>
+	<string name="video_settings_experimental_hint">Applied the next time Android Auto starts. Only used by the Android 4.0 decoder.</string>
+	<string name="video_stats_overlay">Show video statistics over the projection</string>
+	<string name="video_decoder_one_input">Feed the decoder one frame at a time (lower latency)</string>
+	<string name="video_decoder_sps_level_31">With the SPS patch: correct an H.264 level below 3.1 (test)</string>
+	<string name="video_decoder_early_release">Release decoded frames at once (test)</string>
+	<string name="video_decoder_idle_push">Push the decoder when no new frame arrives (test)</string>
+	<string name="video_decoder_nvidia_low_buffer">Nvidia: low buffer (test)</string>
+	<string name="video_decoder_nvidia_no_dpb">Nvidia: no picture buffer (test)</string>
+	<string name="video_decoder_nvidia_full_frame">Nvidia: whole frames (test)</string>
+	<string name="video_decoder_sps_low_latency">Show each frame as soon as it is decoded (SPS patch)</string>
+	<string name="video_decoder_legacy_drop">Drop late frames and wait for a key frame (previous behaviour)</string>
+	<string name="video_stats_waiting">Video statistics: waiting for the first report…</string>
 
 	<string name="enable_media_channel_settings">Enable Media Audio Channel</string>
 	<string name="enable_speech_channel_settings">Enable Speech Audio Channel</string>
@@ -110,6 +131,7 @@
 	<string name="keymap_settings_btnsource">Source</string>
 	<string name="keymap_settings_btnplus">+</string>
 	<string name="keymap_settings_btnminus">-</string>
+	<string name="keymap_press_key">Press the key to assign to %1$s</string>
 
 	<string name="audio_settings">Audio Settings</string>
 
@@ -118,11 +140,14 @@
 	<string name="advanced_settings_enabledebug">Enable external log</string>
 	<string name="advanced_settings_enabletoast">Enable Toast log</string>
 	<string name="advanced_settings_enablewifi">Enable Android Auto Wireless</string>
-	<string name="advanced_settings_enablewifi_hint">Legacy mode: this requires the phone to expose Android Auto on TCP port 5277. A hotspot and the Android Auto Wireless option alone do not enable it.</string>
+	<string name="advanced_settings_enablewifi_hint">Connect the head unit to the phone hotspot. Listens for incoming connections (port 5288) or connects to the phone head unit server (port 5277).</string>
 	<string name="advanced_settings_enablehondaintegration">Enable Honda Integration</string>
 	<string name="advanced_settings_enablehondamicvr">Enable Honda Mic VR</string>
 	<string name="advanced_settings_usebtmicvr">Bluetooth Mic VR</string>
 	<string name="advanced_settings_enablehondaimid">Enable Honda iMid</string>
+	<string name="advanced_settings_honda_keep_source">Android Auto is the audio source while it is on screen: the steering wheel keys go to it and the radio goes quiet</string>
+	<string name="advanced_settings_honda_return_to_projection">Return to Android Auto after calls, reverse camera and Honda voice</string>
+	<string name="advanced_settings_honda_block_bt_voice">Block the Honda Siri over Bluetooth while Android Auto is on screen (experimental)</string>
 	<string name="advanced_settings_logLevel">Log Level</string>
 	<string name="advanced_settings_logProtocol">Enable Log Protocol (logLevel must be verbose)</string>
 	<string name="advanced_settings_modeMgrAudioVideoIdx">Mode mgr audio/video idx</string>
@@ -148,6 +173,7 @@
 	<string name="main_notification_title">Android Auto Mode</string>
 	<string name="main_notification_content">Android Auto Mode</string>
 	<string name="popup_notification_content">Android Auto available, click to connect</string>
+	<string name="notification_turn_off">Turn off</string>
 
 	<string name="media_status_update_message">Media Status Update: source %1$s, status %2$s, progress %3$d</string>
 <!--	<string name="media_metadata_update_message">Media Metadata Update: track %1$s, album: %2$s, artist %3$s, length %4$d</string>-->
@@ -168,5 +194,51 @@
 	<string name="protocol_error">Protocol error. Native AA error: %1$d</string>
 	<string name="wifi_transfer_error">Wifi comunication error. Native AA error: %1$d</string>
 	<string name="generic_error">Generic error. Native AA error: %1$d</string>
+
+	<!-- New UI: home readout, start panel, settings rail and sections -->
+	<string name="home_row_usb" translatable="false">USB</string>
+	<string name="home_row_wifi" translatable="false">Wi-Fi</string>
+	<string name="home_row_video">Video</string>
+	<string name="home_value_usb_ready">Ready</string>
+	<string name="home_value_usb_waiting">Waiting</string>
+	<string name="home_value_usb_busy">In use</string>
+	<string name="home_value_usb_error">Unavailable</string>
+	<string name="home_value_wifi_off">Off</string>
+	<string name="home_value_wifi_waiting">Waiting</string>
+	<string name="home_value_wifi_ready" translatable="false">%1$s</string>
+	<string name="home_value_wifi_listening" translatable="false">%1$s · %2$s:%3$d</string>
+	<string name="home_value_video" translatable="false">%1$s · %2$s fps</string>
+	<string name="home_panel_wait_title">Start appears here</string>
+	<string name="home_panel_wait_detail">when the phone is connected</string>
+	<string name="home_panel_start">Start</string>
+	<string name="home_panel_start_detail" translatable="false">Android Auto</string>
+	<string name="home_panel_recover">Recover</string>
+	<string name="home_panel_recover_detail">the USB connection</string>
+	<string name="home_panel_retry">Try again</string>
+	<string name="home_panel_retry_detail">to connect</string>
+	<string name="home_panel_connecting">Connecting…</string>
+	<string name="home_panel_stopping">Closing…</string>
+	<string name="home_panel_permission">USB permission…</string>
+	<string name="home_panel_active">Projecting</string>
+	<string name="settings_nav_back">Back</string>
+	<string name="settings_nav_car">Car</string>
+	<string name="settings_nav_video">Video</string>
+	<string name="settings_nav_conn">Connection</string>
+	<string name="settings_nav_keys">Keys</string>
+	<string name="settings_nav_advanced">Advanced</string>
+	<string name="settings_section_general">GENERAL</string>
+	<string name="settings_section_clock">CLOCK</string>
+	<string name="settings_section_android_auto" translatable="false">ANDROID AUTO</string>
+	<string name="settings_section_vehicle">VEHICLE</string>
+	<string name="settings_section_projection">PROJECTION</string>
+	<string name="settings_section_background">IN THE BACKGROUND</string>
+	<string name="settings_section_diagnostics">DIAGNOSTICS AND DECODER</string>
+	<string name="settings_section_bluetooth" translatable="false">BLUETOOTH</string>
+	<string name="settings_section_log" translatable="false">LOG</string>
+	<string name="settings_section_wireless">WIRELESS</string>
+	<string name="settings_section_honda" translatable="false">HONDA</string>
+	<string name="theme_title">Theme</string>
+	<string name="theme_option_dark">Dark</string>
+	<string name="theme_option_light">Light</string>
 
 </resources>

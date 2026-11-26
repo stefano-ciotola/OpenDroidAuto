@@ -40,7 +40,13 @@ public class AndroidAutoEntityBuilder  {
 
     public AndroidAutoEntityBuilder(TCPEndpoint tcpEndpoint, IAndroidAutoEntityEventHandler eventHandler, ICarConfiguration config){
         runtime_ = new Runtime();
-        transport_ = new TCPTransport(tcpEndpoint);
+        try {
+            transport_ = new TCPTransport(tcpEndpoint);
+        } catch (RuntimeException | Error e) {
+            tcpEndpoint.delete();
+            runtime_.delete();
+            throw e;
+        }
         eventHandler_ = eventHandler;
         cryptor_ = new Cryptor();
         messenger_ = new Messenger((TCPTransport) transport_, cryptor_);

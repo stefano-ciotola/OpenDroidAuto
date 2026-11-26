@@ -27,6 +27,10 @@ public class KeymapFragment extends BaseSettingsFragment implements View.OnClick
 
     private static final String TAG = "KeymapFragment";
 
+    // On screen: steering wheel keys come here to be learned, even while a
+    // projection runs in the background.
+    private static volatile boolean shown_;
+
     private Button currentButton_;
     private Handler handler_;
     private Runnable unsetKeyListener_;
@@ -130,7 +134,7 @@ public class KeymapFragment extends BaseSettingsFragment implements View.OnClick
         KeyMap c = (KeyMap) b.getTag();
 
         if (keyHolder_ != null) {
-            Toast.makeText(getActivity(), "Press a key to assign to " + c.keyName(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(getActivity(), getString(R.string.keymap_press_key, c.keyName()), Toast.LENGTH_SHORT).show();
             keyHolder_.setOnKeyListener(this);
 
             handler_.postDelayed(unsetKeyListener_, 5000);
@@ -138,9 +142,21 @@ public class KeymapFragment extends BaseSettingsFragment implements View.OnClick
 
     }
 
+    /** True while the key map screen is on screen. */
+    public static boolean isOnScreen() {
+        return shown_;
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        shown_ = true;
+    }
+
     @Override
     public void onStop() {
         if (Log.isVerbose()) Log.v(TAG, "onStop");
+        shown_ = false;
         if (handler_ != null) {
             handler_.removeCallbacksAndMessages(null);
         }

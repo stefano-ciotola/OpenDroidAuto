@@ -51,7 +51,7 @@ public class VideoFragment extends BaseSettingsFragment {
                     Pattern pattern = Pattern.compile("\\d+,\\d+",  Pattern.CASE_INSENSITIVE);
                     Matcher m = pattern.matcher(value);
                     if (!m.matches()){
-                        Toast.makeText(getContext(), "Wrong margin format, it must be x,y", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(getContext(), R.string.video_settings_margin_error, Toast.LENGTH_SHORT).show();
                         settings.video.margin(Settings.Video.VIDEO_MARGIN_DEFAULT_VALUE);
                         margin.setText(Settings.Video.VIDEO_MARGIN_DEFAULT_VALUE);
                     }
@@ -61,7 +61,7 @@ public class VideoFragment extends BaseSettingsFragment {
         });
 
         Spinner nightMode = view.findViewById(R.id.video_night_mode);
-        initSpinner(nightMode, R.array.video_nightmode, R.array.video_nightmode, settings.video, Settings.Video.VIDEO_NIGHT_MODE, Settings.Video.VIDEO_NIGHT_MODE_DEFAULT_VALUE, new Callable<Void>() {
+        initSpinner(nightMode, R.array.video_nightmode_labels, R.array.video_nightmode, settings.video, Settings.Video.VIDEO_NIGHT_MODE, Settings.Video.VIDEO_NIGHT_MODE_DEFAULT_VALUE, new Callable<Void>() {
             @Override
             public Void call() {
                 String value = settings.video.nightMode();
@@ -70,7 +70,7 @@ public class VideoFragment extends BaseSettingsFragment {
                         SensorManager sensorManager = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
                         Sensor lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
                         if (lightSensor == null) {
-                            Toast.makeText(getContext(), "Light sensor not available, switch to default TIME/GPS", Toast.LENGTH_LONG).show();
+                            Toast.makeText(getContext(), R.string.video_settings_light_sensor_missing, Toast.LENGTH_LONG).show();
                             settings.video.nightMode(ISensor.TIME_GPS);
 
                             String[] elements = getContext().getResources().getStringArray(R.array.video_nightmode);
@@ -100,6 +100,36 @@ public class VideoFragment extends BaseSettingsFragment {
 
         CheckBox showAppBadge = view.findViewById(R.id.showAppBadge);
         initCheckBox(showAppBadge, settings.video, Settings.Video.VIDEO_SHOW_APP_BADGE, Settings.Video.VIDEO_SHOW_APP_BADGE_DEFAULT_VALUE);
+
+        // Diagnostics and experimental decoder options, read when a session starts.
+        CheckBox statsOverlay = view.findViewById(R.id.videoStatsOverlay);
+        initCheckBox(statsOverlay, settings.video, Settings.Video.VIDEO_STATS_OVERLAY, Settings.Video.VIDEO_STATS_OVERLAY_DEFAULT_VALUE);
+
+        CheckBox decoderOneInput = view.findViewById(R.id.videoDecoderOneInput);
+        initCheckBox(decoderOneInput, settings.video, Settings.Video.VIDEO_DECODER_ONE_INPUT, Settings.Video.VIDEO_DECODER_ONE_INPUT_DEFAULT_VALUE);
+
+        CheckBox decoderSpsLowLatency = view.findViewById(R.id.videoDecoderSpsLowLatency);
+        initCheckBox(decoderSpsLowLatency, settings.video, Settings.Video.VIDEO_DECODER_SPS_LOW_LATENCY, Settings.Video.VIDEO_DECODER_SPS_LOW_LATENCY_DEFAULT_VALUE);
+
+        CheckBox decoderSpsLevel = view.findViewById(R.id.videoDecoderSpsLevel31);
+        initCheckBox(decoderSpsLevel, settings.video, Settings.Video.VIDEO_DECODER_SPS_LEVEL_31, Settings.Video.VIDEO_DECODER_SPS_LEVEL_31_DEFAULT_VALUE);
+
+        CheckBox decoderIdlePush = view.findViewById(R.id.videoDecoderIdlePush);
+        initCheckBox(decoderIdlePush, settings.video, Settings.Video.VIDEO_DECODER_IDLE_PUSH, Settings.Video.VIDEO_DECODER_IDLE_PUSH_DEFAULT_VALUE);
+        CheckBox decoderEarlyRelease = view.findViewById(R.id.videoDecoderEarlyRelease);
+        initCheckBox(decoderEarlyRelease, settings.video, Settings.Video.VIDEO_DECODER_EARLY_RELEASE, Settings.Video.VIDEO_DECODER_EARLY_RELEASE_DEFAULT_VALUE);
+
+        CheckBox nvidiaLowBuffer = view.findViewById(R.id.videoDecoderNvidiaLowBuffer);
+        initCheckBox(nvidiaLowBuffer, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_BUFFER, Settings.Video.VIDEO_DECODER_NVIDIA_LOW_BUFFER_DEFAULT_VALUE);
+
+        CheckBox nvidiaNoDpb = view.findViewById(R.id.videoDecoderNvidiaNoDpb);
+        initCheckBox(nvidiaNoDpb, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_NO_DPB, Settings.Video.VIDEO_DECODER_NVIDIA_NO_DPB_DEFAULT_VALUE);
+
+        CheckBox nvidiaFullFrame = view.findViewById(R.id.videoDecoderNvidiaFullFrame);
+        initCheckBox(nvidiaFullFrame, settings.video, Settings.Video.VIDEO_DECODER_NVIDIA_FULL_FRAME, Settings.Video.VIDEO_DECODER_NVIDIA_FULL_FRAME_DEFAULT_VALUE);
+
+        CheckBox decoderLegacyDrop = view.findViewById(R.id.videoDecoderLegacyDrop);
+        initCheckBox(decoderLegacyDrop, settings.video, Settings.Video.VIDEO_DECODER_LEGACY_DROP, Settings.Video.VIDEO_DECODER_LEGACY_DROP_DEFAULT_VALUE);
 
         return view;
 

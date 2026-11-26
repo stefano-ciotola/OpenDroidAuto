@@ -1,9 +1,14 @@
 #pragma once
 
 #include <sys/types.h>
+#include "DecoderOptions.h"
 #include "OMXSource.h"
 #include "OMXDecoder.h"
+#include <cstddef>
+#include <cstdint>
+#include <string>
 #include <thread>
+#include <vector>
 #include <android/looper.h>
 
 struct ScreenSize {
@@ -17,9 +22,9 @@ public:
 
     OMXVideoCodec();
 
-    status_t init(int fps);
+    status_t init(int fps, const DecoderOptions& options);
     void shutdown();
-    void setNativeWindow(ANativeWindow* nativeWindow, int height, int width);
+    void setNativeWindow(ANativeWindow* nativeWindow, int width, int height);
 
     OMXSource::Pointer source();
     OMXDecoder::Pointer decoder();
@@ -30,8 +35,15 @@ public:
     ~OMXVideoCodec();
 private:
     void init_omxDecoderThread();
+    // Applies the low-latency SPS rewrite when it is enabled and reports the
+    // stream parameters; true when patched holds the buffer to decode.
+    bool rewriteSps(const uint8_t* data, std::size_t size, std::vector<uint8_t>* patched);
 
     OMXSource::Pointer omxSource_;
+    // OMXSource is reference counted: OMXCodec, and with early release the
+    // decoder's observer, hold it too. This keeps it alive as long as the
+    // codec, whatever they do.
+    sp<OMXSource> sourceRef_;
     OMXDecoder::Pointer omxDecoder_;
 
     std::thread omxDecoderThread_;
@@ -44,4 +56,7 @@ private:
     sp<ANativeWindow> nativeWindow_;
     ScreenSize screenSize_;
     int fps_;
+    DecoderOptions options_;
+    bool statsStarted_;
+    std::string streamSummary_;
 };
